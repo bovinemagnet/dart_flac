@@ -37,7 +37,7 @@ class CueSheetTrack {
 
 /// An index point within a [CueSheetTrack].
 class CueSheetTrackIndex {
-  /// Byte offset of the index point relative to the track offset, in samples.
+  /// Sample offset of the index point relative to the track offset, in samples.
   final int offset;
 
   /// Index number (0 or 1 for the first two index points, etc.).

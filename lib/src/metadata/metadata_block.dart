@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 /// Block type identifiers for FLAC metadata blocks.
@@ -94,9 +95,8 @@ int readUint64BE(Uint8List data, int offset) {
 
 /// Reads a UTF-8 encoded string of [byteLength] bytes from [data] at [offset].
 String readUtf8Bytes(Uint8List data, int offset, int byteLength) {
-  final bytes = data.sublist(offset, offset + byteLength);
-  // Dart strings are UTF-16 internally; this converts UTF-8 bytes correctly.
-  return String.fromCharCodes(bytes);
+  return utf8.decode(data.sublist(offset, offset + byteLength),
+      allowMalformed: true);
 }
 
 /// Reads a string prefixed by a 32-bit little-endian length field.

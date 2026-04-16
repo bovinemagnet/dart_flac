@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'metadata_block.dart';
@@ -78,14 +79,15 @@ class PictureBlock extends MetadataBlock {
     // MIME type: 32-bit BE length + UTF-8 bytes.
     final mimeLen = readUint32BE(data, offset);
     offset += 4;
-    final mimeType = String.fromCharCodes(data.sublist(offset, offset + mimeLen));
+    final mimeType = utf8.decode(data.sublist(offset, offset + mimeLen),
+        allowMalformed: true);
     offset += mimeLen;
 
     // Description: 32-bit BE length + UTF-8 bytes.
     final descLen = readUint32BE(data, offset);
     offset += 4;
-    final description =
-        String.fromCharCodes(data.sublist(offset, offset + descLen));
+    final description = utf8.decode(data.sublist(offset, offset + descLen),
+        allowMalformed: true);
     offset += descLen;
 
     final width = readUint32BE(data, offset);
