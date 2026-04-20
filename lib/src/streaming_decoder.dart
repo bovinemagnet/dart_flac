@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'frame/frame.dart';
 import 'metadata/metadata_block.dart';
 import 'metadata/stream_info.dart';
+import 'pcm_output.dart';
 
 /// A push-based FLAC decoder.
 ///
@@ -38,6 +39,17 @@ class StreamingFlacDecoder {
 
   /// Resolves with the STREAMINFO block once it has been parsed.
   Future<StreamInfoBlock> get onStreamInfo => _streamInfoCompleter.future;
+
+  /// Stream of interleaved little-endian signed PCM byte chunks, one per
+  /// decoded frame — the shape most low-level audio sinks expect.
+  ///
+  /// [outputBitsPerSample] defaults to the stream's native bit depth
+  /// (rounded up to 8/16/24/32). Pass an explicit value to force a
+  /// specific output width (e.g. 16 for a 16-bit-only player).
+  Stream<Uint8List> pcmStream({int? outputBitsPerSample}) {
+    return frames.map((f) => frameToInterleavedPcm(
+        f, outputBitsPerSample ?? f.header.bitsPerSample));
+  }
 
   _State _state = _State.awaitingMarker;
   final BytesBuilder _builder = BytesBuilder(copy: false);

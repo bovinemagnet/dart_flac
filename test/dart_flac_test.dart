@@ -947,6 +947,68 @@ void main() {
     });
   });
 
+  group('pcmChunks', () {
+    test('concatenated chunks equal the encoder input PCM', () {
+      final reader =
+          FlacReader.fromFileSync('test/fixtures/stereo_16_44100.flac');
+      final expected =
+          File('test/fixtures/stereo_16_44100.pcm').readAsBytesSync();
+      final builder = BytesBuilder(copy: false);
+      for (final chunk in reader.pcmChunks()) {
+        builder.add(chunk);
+      }
+      expect(builder.takeBytes(), equals(expected));
+    });
+
+    test('is lazy – take(1) only decodes one frame', () {
+      final reader =
+          FlacReader.fromFileSync('test/fixtures/stereo_16_44100.flac');
+      final first = reader.pcmChunks().first;
+      // First frame at blocksize 128, stereo 16-bit = 512 bytes.
+      expect(first.length, equals(128 * 2 * 2));
+    });
+
+    test('outputBitsPerSample override truncates a 24-bit source to 16-bit',
+        () {
+      final reader =
+          FlacReader.fromFileSync('test/fixtures/stereo_24_96000.flac');
+      final builder = BytesBuilder(copy: false);
+      for (final chunk in reader.pcmChunks(outputBitsPerSample: 16)) {
+        builder.add(chunk);
+      }
+      final truncated = builder.takeBytes();
+      // 256 samples × 2 channels × 2 bytes = 1024.
+      expect(truncated.length, equals(256 * 2 * 2));
+    });
+  });
+
+  group('StreamingFlacDecoder.pcmStream', () {
+    test('delivers the same bytes as FlacReader.pcmChunks', () async {
+      final flacBytes =
+          File('test/fixtures/stereo_16_44100.flac').readAsBytesSync();
+      final reader = FlacReader.fromBytes(flacBytes);
+      final expected = BytesBuilder(copy: false);
+      for (final c in reader.pcmChunks()) {
+        expected.add(c);
+      }
+
+      final decoder = StreamingFlacDecoder();
+      final gotBuilder = BytesBuilder(copy: false);
+      final sub = decoder
+          .pcmStream(outputBitsPerSample: reader.streamInfo.bitsPerSample)
+          .listen(gotBuilder.add);
+
+      for (var i = 0; i < flacBytes.length; i += 256) {
+        final end = (i + 256).clamp(0, flacBytes.length);
+        decoder.addBytes(Uint8List.sublistView(flacBytes, i, end));
+      }
+      decoder.close();
+      await sub.asFuture<void>();
+
+      expect(gotBuilder.takeBytes(), equals(expected.takeBytes()));
+    });
+  });
+
   group('writeWavBytes', () {
     test('produces a RIFF/WAVE buffer whose PCM equals the encoder input',
         () {

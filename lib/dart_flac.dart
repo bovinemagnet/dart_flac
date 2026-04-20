@@ -5,6 +5,7 @@
 library dart_flac;
 
 export 'src/flac_reader.dart' show FlacReader, Md5VerificationResult;
+export 'src/pcm_output.dart' show frameToInterleavedPcm;
 export 'src/streaming_decoder.dart' show StreamingFlacDecoder;
 export 'src/wav_writer.dart' show writeWavBytes;
 export 'src/metadata/metadata_block.dart';

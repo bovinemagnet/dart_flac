@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'frame/frame.dart';
+import 'pcm_output.dart';
 
 /// Serialises decoded FLAC samples as a RIFF/WAVE byte buffer.
 ///
@@ -18,28 +19,30 @@ Uint8List writeWavBytes({
   final outBps = ((bitsPerSample + 7) ~/ 8) * 8;
   final bytesPerSample = outBps ~/ 8;
 
-  // Count samples so we can size a single contiguous buffer.
-  // If the caller passed a List, this is O(n); if it's a lazy iterable,
-  // we have to materialise once to know the size — accept that cost.
   final frameList = frames is List<FlacFrame> ? frames : frames.toList();
-  var totalSamples = 0;
+  final builder = BytesBuilder(copy: false);
   for (final f in frameList) {
-    totalSamples += f.blockSize * f.channelCount;
+    builder.add(frameToInterleavedPcm(f, outBps));
   }
+  final signedPcm = builder.takeBytes();
 
-  final dataSize = totalSamples * bytesPerSample;
+  // 8-bit WAV is unsigned (bias of 128).
+  final pcm = outBps == 8
+      ? Uint8List.fromList(
+          signedPcm.map((b) => (b.toSigned(8) + 128) & 0xFF).toList())
+      : signedPcm;
+
+  final dataSize = pcm.length;
   const headerSize = 44;
   final out = Uint8List(headerSize + dataSize);
   final bd = ByteData.sublistView(out);
 
-  // RIFF chunk descriptor.
   _writeAscii(out, 0, 'RIFF');
   bd.setUint32(4, 36 + dataSize, Endian.little);
   _writeAscii(out, 8, 'WAVE');
 
-  // "fmt " sub-chunk.
   _writeAscii(out, 12, 'fmt ');
-  bd.setUint32(16, 16, Endian.little); // PCM fmt chunk size
+  bd.setUint32(16, 16, Endian.little);
   bd.setUint16(20, 1, Endian.little); // format code = PCM
   bd.setUint16(22, channels, Endian.little);
   bd.setUint32(24, sampleRate, Endian.little);
@@ -47,30 +50,10 @@ Uint8List writeWavBytes({
   bd.setUint16(32, channels * bytesPerSample, Endian.little);
   bd.setUint16(34, outBps, Endian.little);
 
-  // "data" sub-chunk header.
   _writeAscii(out, 36, 'data');
   bd.setUint32(40, dataSize, Endian.little);
 
-  // Interleaved sample data.
-  var o = headerSize;
-  final mask = outBps == 32 ? 0xFFFFFFFF : (1 << outBps) - 1;
-  for (final f in frameList) {
-    final cs = f.channelSamples;
-    for (var s = 0; s < f.blockSize; s++) {
-      for (var ch = 0; ch < f.channelCount; ch++) {
-        var v = cs[ch][s];
-        if (outBps == 8) {
-          // 8-bit WAV is unsigned PCM (bias of 128).
-          out[o++] = (v + 128) & 0xFF;
-        } else {
-          v = v & mask;
-          for (var b = 0; b < bytesPerSample; b++) {
-            out[o++] = (v >> (b * 8)) & 0xFF;
-          }
-        }
-      }
-    }
-  }
+  out.setRange(headerSize, headerSize + dataSize, pcm);
   return out;
 }
 

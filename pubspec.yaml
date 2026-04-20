@@ -1,6 +1,6 @@
 name: dart_flac
-description: A Dart implementation of the FLAC (Free Lossless Audio Codec) library for reading and decoding FLAC audio files.
-version: 0.1.0
+description: Pure-Dart FLAC decoder. Reads metadata, decodes LPC/FIXED subframes, verifies MD5, streams PCM to any audio sink. No native deps.
+version: 0.2.0
 repository: https://github.com/bovinemagnet/dart_flac
 
 environment:

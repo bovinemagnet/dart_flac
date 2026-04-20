@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'frame/frame.dart';
 import 'md5_verifier.dart';
+import 'pcm_output.dart';
 import 'metadata/application.dart';
 import 'metadata/cue_sheet.dart';
 import 'metadata/metadata_block.dart';
@@ -153,6 +154,23 @@ class FlacReader {
       );
     }
     return parser.parseAllFrames(audioDataOffset);
+  }
+
+  /// Returns a lazy iterable of PCM byte chunks, one per decoded frame.
+  ///
+  /// Each chunk contains interleaved, little-endian, signed samples,
+  /// ready to be fed to a PCM-accepting audio sink such as
+  /// `flutter_sound`, `flutter_soloud`, or a PortAudio/SDL FFI wrapper.
+  ///
+  /// [outputBitsPerSample] defaults to the stream's native bit depth
+  /// (rounded up to 8/16/24/32). Override it when your player expects
+  /// a specific width — e.g. pass 16 to truncate a 24-bit source for a
+  /// player that only accepts 16-bit PCM.
+  Iterable<Uint8List> pcmChunks({int? outputBitsPerSample}) sync* {
+    final bps = outputBitsPerSample ?? streamInfo.bitsPerSample;
+    for (final frame in framesLazy()) {
+      yield frameToInterleavedPcm(frame, bps);
+    }
   }
 
   /// Returns a lazy iterable over the audio frames.
