@@ -1,10 +1,18 @@
 name: dart_flac
 description: Pure-Dart FLAC decoder. Reads metadata, decodes LPC/FIXED subframes, verifies MD5, streams PCM to any audio sink. No native deps.
 version: 0.0.1
+homepage: https://github.com/bovinemagnet/dart_flac
 repository: https://github.com/bovinemagnet/dart_flac
+issue_tracker: https://github.com/bovinemagnet/dart_flac/issues
+
+topics:
+  - flac
+  - audio
+  - decoder
+  - codec
 
 environment:
-  sdk: ^3.0.0
+  sdk: ">=3.0.0 <4.0.0"
 
 executables:
   flac2wav:
