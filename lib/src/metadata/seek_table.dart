@@ -4,27 +4,28 @@ import 'metadata_block.dart';
 
 /// A single seek point in a FLAC [SeekTableBlock].
 class SeekPoint {
-  /// Sample number of the first sample of the target frame, or
-  /// [SeekPoint.placeholderSampleNumber] if this is a placeholder point.
+  /// Sample number of the first sample of the target frame. Meaningless
+  /// when [isPlaceholder] is true.
   final int sampleNumber;
 
   /// Byte offset from the start of the first frame to the target frame.
+  /// Meaningless when [isPlaceholder] is true.
   final int streamOffset;
 
-  /// Number of samples in the target frame.
+  /// Number of samples in the target frame. Meaningless when
+  /// [isPlaceholder] is true.
   final int frameSamples;
 
-  /// Sentinel value used to mark a placeholder seek point.
-  static const int placeholderSampleNumber = 0xFFFFFFFFFFFFFFFF;
+  /// Whether this seek point is a placeholder (FLAC uses an all-ones
+  /// sample number to mark unused slots in the seek table).
+  final bool isPlaceholder;
 
   const SeekPoint({
     required this.sampleNumber,
     required this.streamOffset,
     required this.frameSamples,
+    this.isPlaceholder = false,
   });
-
-  /// Whether this seek point is a placeholder.
-  bool get isPlaceholder => sampleNumber == placeholderSampleNumber;
 
   @override
   String toString() => isPlaceholder
@@ -60,13 +61,25 @@ class SeekTableBlock extends MetadataBlock {
     final points = <SeekPoint>[];
     for (var i = 0; i < count; i++) {
       final offset = i * 18;
-      final sampleNumber = readUint64BE(data, offset);
-      final streamOffset = readUint64BE(data, offset + 8);
+      // Placeholder seek points encode sampleNumber as all-ones. Detect
+      // this by byte inspection so we don't have to represent an unsigned
+      // 64-bit integer at runtime (web platforms can't).
+      var isPlaceholder = true;
+      for (var b = 0; b < 8; b++) {
+        if (data[offset + b] != 0xFF) {
+          isPlaceholder = false;
+          break;
+        }
+      }
+      final sampleNumber = isPlaceholder ? 0 : readUint64BE(data, offset);
+      final streamOffset =
+          isPlaceholder ? 0 : readUint64BE(data, offset + 8);
       final frameSamples = (data[offset + 16] << 8) | data[offset + 17];
       points.add(SeekPoint(
         sampleNumber: sampleNumber,
         streamOffset: streamOffset,
         frameSamples: frameSamples,
+        isPlaceholder: isPlaceholder,
       ));
     }
     return SeekTableBlock(isLast: isLast, length: length, seekPoints: points);

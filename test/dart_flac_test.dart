@@ -264,6 +264,21 @@ void main() {
       expect(reader.seekTable!.seekPoints.first.frameSamples, equals(4));
       expect(reader.seekTable!.seekPoints.first.isPlaceholder, isFalse);
     });
+
+    test('placeholder point detected without relying on 64-bit literals', () {
+      // sample_number = all 0xFF → placeholder marker. Must be detectable
+      // on the web, where Dart int is a JS Number and 0xFFFFFFFFFFFFFFFF
+      // cannot be represented exactly.
+      final seekData = Uint8List(18);
+      for (var i = 0; i < 8; i++) {
+        seekData[i] = 0xFF;
+      }
+      final bytes = _buildFlacWithBlock(
+          BlockType.seekTable, true, seekData);
+      final reader = FlacReader.fromBytes(bytes);
+      final pt = reader.seekTable!.seekPoints.single;
+      expect(pt.isPlaceholder, isTrue);
+    });
   });
 
   group('ApplicationBlock', () {

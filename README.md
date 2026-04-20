@@ -122,12 +122,21 @@ dart run dart_flac:flac2wav --verify track.flac track.wav
 See [`example/`](example/) for runnable programs covering the full API
 surface.
 
+## Platforms
+
+Pure Dart, no FFI, no conditional compilation. Runs on the Dart VM
+(CLI, server), AOT, Flutter (mobile and desktop), and the **web**
+(`dart compile js`, Flutter web). On web, use `FlacReader.fromBytes`
+or `StreamingFlacDecoder` with bytes from a fetch/HTTP response or a
+`<input type="file">` upload — `FlacReader.fromFile` throws
+`UnsupportedError` on web because `dart:io` isn't available there.
+
 ## Non-goals
 
 - **Audio playback.** This library emits PCM; it does not drive a
   sound card. Pair it with `flutter_sound`, `flutter_soloud`,
-  `dart:ffi` + PortAudio / SDL / miniaudio, or any other PCM-accepting
-  sink.
+  `dart:ffi` + PortAudio / SDL / miniaudio, `AudioContext` from
+  `package:web`, or any other PCM-accepting sink.
 - **Encoding.** Decoder only.
 - **Ogg-FLAC container.** Only native FLAC (`fLaC` marker) streams are
   parsed.
