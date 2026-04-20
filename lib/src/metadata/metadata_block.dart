@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:fixnum/fixnum.dart';
+
 import 'application.dart';
 import 'cue_sheet.dart';
 import 'padding.dart';
@@ -113,19 +115,14 @@ int readUint32BE(Uint8List data, int offset) =>
     (data[offset + 2] << 8) |
     data[offset + 3];
 
-/// Reads a 64-bit big-endian unsigned integer from [data] at [offset].
+/// Reads a 64-bit big-endian unsigned integer from [data] at [offset] as
+/// an [Int64].
 ///
-/// Dart integers are 64-bit on the VM/AOT target, so this is safe.
-int readUint64BE(Uint8List data, int offset) {
-  final hi = (data[offset] << 24) |
-      (data[offset + 1] << 16) |
-      (data[offset + 2] << 8) |
-      data[offset + 3];
-  final lo = (data[offset + 4] << 24) |
-      (data[offset + 5] << 16) |
-      (data[offset + 6] << 8) |
-      data[offset + 7];
-  return (hi * 0x100000000) + (lo & 0xFFFFFFFF);
+/// Represented as a [fixnum] [Int64] so the full 64-bit range is
+/// preserved on every platform — the web's native `int` is a JavaScript
+/// `Number` and cannot hold values beyond 2^53 without precision loss.
+Int64 readUint64BE(Uint8List data, int offset) {
+  return Int64.fromBytesBigEndian(data.sublist(offset, offset + 8));
 }
 
 /// Reads a UTF-8 encoded string of [byteLength] bytes from [data] at [offset].

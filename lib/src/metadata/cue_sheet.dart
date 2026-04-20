@@ -1,11 +1,13 @@
 import 'dart:typed_data';
 
+import 'package:fixnum/fixnum.dart';
+
 import 'metadata_block.dart';
 
 /// A single track in a [CueSheetBlock].
 class CueSheetTrack {
   /// Track offset in samples from the beginning of the audio stream.
-  final int trackOffset;
+  final Int64 trackOffset;
 
   /// Track number (1–99 for CD-DA, 1–254 for others; 170 for lead-out).
   final int trackNumber;
@@ -38,7 +40,7 @@ class CueSheetTrack {
 /// An index point within a [CueSheetTrack].
 class CueSheetTrackIndex {
   /// Sample offset of the index point relative to the track offset, in samples.
-  final int offset;
+  final Int64 offset;
 
   /// Index number (0 or 1 for the first two index points, etc.).
   final int indexNumber;
@@ -58,7 +60,7 @@ class CueSheetBlock extends MetadataBlock {
   final String mediaCatalogNumber;
 
   /// Number of lead-in samples (for CD-DA this is ≥ 2 seconds worth).
-  final int leadInSamples;
+  final Int64 leadInSamples;
 
   /// Whether the cue sheet corresponds to a CD.
   final bool isCD;

@@ -53,3 +53,11 @@ Initial release.
   32-bit (8-bit output applies the unsigned WAV bias).
 - `bin/flac2wav.dart` — command-line entry point installed via
   `dart run dart_flac:flac2wav`, with `--verify` option.
+
+### Platform support
+
+- Compiles and runs on the Dart VM, AOT, Flutter, and the web.
+- 64-bit FLAC fields (SEEKTABLE sample numbers / stream offsets,
+  CUESHEET offsets and lead-in samples) are exposed as `Int64` from
+  `package:fixnum` so they keep full precision under `dart compile js`
+  and Flutter web, where native `int` is limited to 2^53.

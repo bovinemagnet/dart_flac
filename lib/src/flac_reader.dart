@@ -240,10 +240,10 @@ class FlacReader {
     if (table != null) {
       for (final pt in table.seekPoints) {
         if (pt.isPlaceholder) continue;
-        if (pt.sampleNumber <= sampleNumber &&
-            pt.sampleNumber >= scanSample) {
-          scanOffset = audioDataOffset + pt.streamOffset;
-          scanSample = pt.sampleNumber;
+        final ptSample = pt.sampleNumber.toInt();
+        if (ptSample <= sampleNumber && ptSample >= scanSample) {
+          scanOffset = audioDataOffset + pt.streamOffset.toInt();
+          scanSample = ptSample;
         }
       }
     }

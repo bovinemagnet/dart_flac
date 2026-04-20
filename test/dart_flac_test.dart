@@ -805,13 +805,14 @@ void main() {
       final reader = FlacReader.fromBytes(bytes);
       final cuesheet = reader.cueSheet;
       expect(cuesheet, isNotNull);
-      expect(cuesheet!.leadInSamples, equals(88200));
+      expect(cuesheet!.leadInSamples.toInt(), equals(88200));
       expect(cuesheet.isCD, isTrue);
       expect(cuesheet.tracks.length, equals(2));
       expect(cuesheet.tracks[0].trackNumber, equals(1));
       expect(cuesheet.tracks[0].isrc.startsWith('US-S1Z-00'), isTrue);
       expect(cuesheet.tracks[0].indices.length, equals(1));
       expect(cuesheet.tracks[1].trackNumber, equals(170));
+      expect(cuesheet.tracks[1].trackOffset.toInt(), equals(256));
     });
   });
 

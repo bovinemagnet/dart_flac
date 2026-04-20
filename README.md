@@ -131,6 +131,15 @@ or `StreamingFlacDecoder` with bytes from a fetch/HTTP response or a
 `<input type="file">` upload — `FlacReader.fromFile` throws
 `UnsupportedError` on web because `dart:io` isn't available there.
 
+Spec-defined 64-bit fields (`SeekPoint.sampleNumber`, `streamOffset`,
+`CueSheetTrack.trackOffset`, `CueSheetTrackIndex.offset`,
+`CueSheetBlock.leadInSamples`) are exposed as [`Int64`][fixnum] from
+`package:fixnum` rather than `int`, so they keep full precision on
+the web (where Dart's native `int` is a JavaScript `Number` limited
+to 2^53). Call `.toInt()` when you need a plain `int`.
+
+[fixnum]: https://pub.dev/packages/fixnum
+
 ## Non-goals
 
 - **Audio playback.** This library emits PCM; it does not drive a
