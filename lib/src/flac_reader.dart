@@ -68,7 +68,8 @@ Uint8List decodeFlacBytesToPcm(Uint8List flacBytes,
 
 Uint8List _readerToPcm(FlacReader reader, int outputBitsPerSample) {
   final builder = BytesBuilder(copy: false);
-  for (final chunk in reader.pcmChunks(outputBitsPerSample: outputBitsPerSample)) {
+  for (final chunk
+      in reader.pcmChunks(outputBitsPerSample: outputBitsPerSample)) {
     builder.add(chunk);
   }
   return builder.takeBytes();
@@ -339,12 +340,11 @@ class FlacReader {
             sampleNumber, 'sampleNumber', 'beyond end of stream');
       }
       final (header, _, _) = parser.parseFrameHeader(scanOffset);
-      final startSample = header.blockingStrategy ==
-              BlockingStrategy.variableBlocksize
-          ? header.number
-          : header.number * (fixedBlockSize > 0
-              ? fixedBlockSize
-              : header.blockSize);
+      final startSample =
+          header.blockingStrategy == BlockingStrategy.variableBlocksize
+              ? header.number
+              : header.number *
+                  (fixedBlockSize > 0 ? fixedBlockSize : header.blockSize);
       final endSample = startSample + header.blockSize;
       if (sampleNumber < endSample) return scanOffset;
       // Advance past this frame's body by fully decoding the frame. A
@@ -379,8 +379,7 @@ class FlacReader {
     final info = streamInfo;
     final totalSamples = info.totalSamples > 0
         ? info.totalSamples * info.channels
-        : frames.fold<int>(
-            0, (sum, f) => sum + f.blockSize * f.channelCount);
+        : frames.fold<int>(0, (sum, f) => sum + f.blockSize * f.channelCount);
     final output = Int32List(totalSamples);
     var out = 0;
     for (final frame in frames) {
@@ -405,8 +404,7 @@ class FlacReader {
     }
     for (var i = 0; i < 4; i++) {
       if (bytes[offset + i] != _flacMarker[i]) {
-        throw FormatException(
-            'Missing FLAC stream marker "fLaC". '
+        throw FormatException('Missing FLAC stream marker "fLaC". '
             'Got: 0x${bytes[offset + i].toRadixString(16)} at byte ${offset + i}.');
       }
     }
@@ -453,9 +451,8 @@ class FlacReader {
     final headerByte = data[offset];
     final isLast = (headerByte & 0x80) != 0;
     final type = headerByte & 0x7F;
-    final length = (data[offset + 1] << 16) |
-        (data[offset + 2] << 8) |
-        data[offset + 3];
+    final length =
+        (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3];
     offset += 4;
 
     if (offset + length > data.length) {

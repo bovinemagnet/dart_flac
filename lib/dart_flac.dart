@@ -2,7 +2,7 @@
 ///
 /// Provides functionality for reading and decoding FLAC audio files,
 /// including metadata parsing and audio frame decoding.
-library dart_flac;
+library;
 
 export 'src/flac_reader.dart'
     show

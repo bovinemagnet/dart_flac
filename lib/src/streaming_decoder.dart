@@ -183,8 +183,8 @@ class StreamingFlacDecoder {
 
   bool _tryParseBlockBody() {
     if (_available < _pendingBlockLength) return false;
-    final data = Uint8List.sublistView(
-        _buffer, _pos, _pos + _pendingBlockLength);
+    final data =
+        Uint8List.sublistView(_buffer, _pos, _pos + _pendingBlockLength);
     final block = parseMetadataBlock(
         _pendingBlockType, _pendingBlockIsLast, _pendingBlockLength, data);
     _metadataCtrl.add(block);

@@ -18,8 +18,7 @@ abstract final class SubframeDecoder {
   /// Decodes [blockSize] samples from [reader] using [bitsPerSample] bits.
   ///
   /// Returns the decoded samples as an [Int32List].
-  static Int32List decode(
-      BitReader reader, int blockSize, int bitsPerSample) {
+  static Int32List decode(BitReader reader, int blockSize, int bitsPerSample) {
     // Subframe header: 1 reserved bit, 6 type bits, wasted-bits flag + count.
     reader.readBit(); // zero bit (padding)
     final typeCode = reader.readBits(6);
@@ -156,8 +155,8 @@ abstract final class SubframeDecoder {
     final qlpShift = r.readSignedBits(5);
 
     // QLP coefficients.
-    final coefficients = List<int>.generate(
-        order, (_) => r.readSignedBits(qlpPrecision));
+    final coefficients =
+        List<int>.generate(order, (_) => r.readSignedBits(qlpPrecision));
 
     // Residual.
     _decodeResidual(r, blockSize, order, samples);

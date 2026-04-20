@@ -214,8 +214,7 @@ class FrameParser {
       case 0xE:
         sampleRate = r.readBits(16) * 10;
       default:
-        throw FormatException(
-            'Invalid sample rate bits 0xF in frame header.');
+        throw FormatException('Invalid sample rate bits 0xF in frame header.');
     }
 
     // Channel assignment.
@@ -262,8 +261,7 @@ class FrameParser {
     // CRC-8 covers all frame header bytes up to (but not including) the CRC.
     final headerEndOffset = r.bytePosition; // absolute offset in _data
     final headerCrc8 = r.readByte();
-    final computedCrc8 =
-        crc8(_data.sublist(startOffset, headerEndOffset));
+    final computedCrc8 = crc8(_data.sublist(startOffset, headerEndOffset));
     if (headerCrc8 != computedCrc8) {
       throw FormatException(
           'Frame header CRC-8 mismatch at offset $startOffset: '
@@ -313,11 +311,9 @@ class FrameParser {
     final frameCrc16Hi = r.readByte();
     final frameCrc16Lo = r.readByte();
     final storedCrc16 = (frameCrc16Hi << 8) | frameCrc16Lo;
-    final computedCrc16 =
-        crc16(_data.sublist(startOffset, frameEndOffset));
+    final computedCrc16 = crc16(_data.sublist(startOffset, frameEndOffset));
     if (storedCrc16 != computedCrc16) {
-      throw FormatException(
-          'Frame CRC-16 mismatch at offset $startOffset: '
+      throw FormatException('Frame CRC-16 mismatch at offset $startOffset: '
           'expected 0x${computedCrc16.toRadixString(16)}, '
           'got 0x${storedCrc16.toRadixString(16)}.');
     }
@@ -330,7 +326,10 @@ class FrameParser {
     final channelSamples =
         _decorrelate(channelAssignment, rawSamples, bitsPerSample);
 
-    return (FlacFrame(header: header, channelSamples: channelSamples), endOffset);
+    return (
+      FlacFrame(header: header, channelSamples: channelSamples),
+      endOffset
+    );
   }
 
   /// Returns 1 if [channel] is the side channel in a stereo-coded frame that

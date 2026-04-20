@@ -65,8 +65,7 @@ Future<void> main(List<String> rawArgs) async {
   );
   await File(outputPath).writeAsBytes(wav);
 
-  stderr.writeln(
-      'flac2wav: wrote $outputPath '
+  stderr.writeln('flac2wav: wrote $outputPath '
       '(${info.channels}ch, ${info.sampleRate} Hz, ${info.bitsPerSample}-bit, '
       '${info.totalSamples} samples).');
 

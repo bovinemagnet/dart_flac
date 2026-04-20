@@ -40,8 +40,7 @@ class BitReader {
 
     while (remaining > 0) {
       if (_bytePos >= _data.length) {
-        throw StateError(
-            'Not enough data: tried to read $n bits but only '
+        throw StateError('Not enough data: tried to read $n bits but only '
             '${(_data.length * 8) - bitsConsumed + remaining} bits remain.');
       }
       final bitsInByte = 8 - _bitPos;

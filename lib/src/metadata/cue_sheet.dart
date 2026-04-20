@@ -120,8 +120,8 @@ class CueSheetBlock extends MetadataBlock {
         offset += 8;
         final indexNumber = data[offset++];
         offset += 3; // 3 reserved bytes
-        indices.add(CueSheetTrackIndex(
-            offset: indexOffset, indexNumber: indexNumber));
+        indices.add(
+            CueSheetTrackIndex(offset: indexOffset, indexNumber: indexNumber));
       }
       tracks.add(CueSheetTrack(
         trackOffset: trackOffset,

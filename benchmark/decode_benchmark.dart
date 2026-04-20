@@ -68,8 +68,10 @@ Future<void> main(List<String> args) async {
     'oneshot': 'decodeFlacFileToPcm',
   };
 
-  print('| Operation                  | Median (ms) | × realtime | Peak RSS (MB) |');
-  print('|----------------------------|-------------|------------|---------------|');
+  print(
+      '| Operation                  | Median (ms) | × realtime | Peak RSS (MB) |');
+  print(
+      '|----------------------------|-------------|------------|---------------|');
   for (final op in operations) {
     final results = <_Result>[];
     for (var i = 0; i < _iterations; i++) {

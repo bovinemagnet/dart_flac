@@ -30,7 +30,9 @@ List<int> _buildCrc16Table() {
   for (var i = 0; i < 256; i++) {
     var crc = i << 8;
     for (var j = 0; j < 8; j++) {
-      crc = (crc & 0x8000) != 0 ? ((crc << 1) ^ poly) & 0xFFFF : (crc << 1) & 0xFFFF;
+      crc = (crc & 0x8000) != 0
+          ? ((crc << 1) ^ poly) & 0xFFFF
+          : (crc << 1) & 0xFFFF;
     }
     table[i] = crc;
   }

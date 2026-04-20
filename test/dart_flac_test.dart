@@ -76,8 +76,7 @@ void main() {
     test('min block size', () => expect(info.minBlockSize, equals(4)));
     test('max block size', () => expect(info.maxBlockSize, equals(4)));
     test('duration', () {
-      final expected = Duration(
-          microseconds: (8 * 1000000 ~/ 44100));
+      final expected = Duration(microseconds: (8 * 1000000 ~/ 44100));
       expect(info.duration, equals(expected));
     });
     test('md5 is zeroed', () {
@@ -158,7 +157,8 @@ void main() {
       final samples = reader.decodeInterleavedSamples();
       // Frame 0: [left=1000, right=-500] × 4 then Frame 1: [0, 0] × 4
       for (var i = 0; i < 8; i += 2) {
-        expect(samples[i], equals(1000), reason: 'index $i should be left=1000');
+        expect(samples[i], equals(1000),
+            reason: 'index $i should be left=1000');
         expect(samples[i + 1], equals(-500),
             reason: 'index ${i + 1} should be right=-500');
       }
@@ -238,8 +238,7 @@ void main() {
 
   group('PaddingBlock', () {
     test('parsed correctly', () {
-      final bytes = _buildFlacWithBlock(
-          BlockType.padding, true, Uint8List(64));
+      final bytes = _buildFlacWithBlock(BlockType.padding, true, Uint8List(64));
       final reader = FlacReader.fromBytes(bytes);
       final padding = reader.paddingBlocks;
       expect(padding.length, equals(1));
@@ -257,8 +256,7 @@ void main() {
       seekData[16] = 0;
       seekData[17] = 4;
 
-      final bytes = _buildFlacWithBlock(
-          BlockType.seekTable, true, seekData);
+      final bytes = _buildFlacWithBlock(BlockType.seekTable, true, seekData);
       final reader = FlacReader.fromBytes(bytes);
       expect(reader.seekTable, isNotNull);
       expect(reader.seekTable!.seekPoints.length, equals(1));
@@ -274,8 +272,7 @@ void main() {
       for (var i = 0; i < 8; i++) {
         seekData[i] = 0xFF;
       }
-      final bytes = _buildFlacWithBlock(
-          BlockType.seekTable, true, seekData);
+      final bytes = _buildFlacWithBlock(BlockType.seekTable, true, seekData);
       final reader = FlacReader.fromBytes(bytes);
       final pt = reader.seekTable!.seekPoints.single;
       expect(pt.isPlaceholder, isTrue);
@@ -289,8 +286,7 @@ void main() {
         0x41, 0x49, 0x46, 0x46, // "AIFF"
         0xDE, 0xAD, 0xBE, 0xEF, // application data
       ]);
-      final bytes =
-          _buildFlacWithBlock(BlockType.application, true, appData);
+      final bytes = _buildFlacWithBlock(BlockType.application, true, appData);
       final reader = FlacReader.fromBytes(bytes);
       final appBlocks = reader.applicationBlocks;
       expect(appBlocks.length, equals(1));
@@ -432,8 +428,20 @@ void main() {
     test('crc16 known value for frame 0', () {
       // CRC-16 of frame 0 body (all bytes except the last 2) = 0xcaa8
       final frameBody = [
-        0xff, 0xf8, 0x69, 0x88, 0x00, 0x03, 0x1f,
-        0x00, 0x03, 0xe8, 0x00, 0x02, 0xee, 0x00
+        0xff,
+        0xf8,
+        0x69,
+        0x88,
+        0x00,
+        0x03,
+        0x1f,
+        0x00,
+        0x03,
+        0xe8,
+        0x00,
+        0x02,
+        0xee,
+        0x00
       ];
       expect(crc16(frameBody), equals(0xcaa8));
     });
@@ -443,12 +451,10 @@ void main() {
     test('unrecognised block type preserved as UnknownMetadataBlock', () {
       // Type 127 is "invalid" per spec but should be handled gracefully.
       final unknownData = Uint8List.fromList([0xDE, 0xAD]);
-      final bytes =
-          _buildFlacWithBlock(127, true, unknownData);
+      final bytes = _buildFlacWithBlock(127, true, unknownData);
       final reader = FlacReader.fromBytes(bytes);
-      final unknown = reader.metadataBlocks
-          .whereType<UnknownMetadataBlock>()
-          .toList();
+      final unknown =
+          reader.metadataBlocks.whereType<UnknownMetadataBlock>().toList();
       expect(unknown.length, equals(1));
       expect(unknown.first.blockType, equals(127));
       expect(unknown.first.rawData, equals(unknownData));
@@ -589,8 +595,7 @@ void main() {
 
     setUp(() {
       reader = FlacReader.fromFileSync('test/fixtures/stereo_16_44100.flac');
-      expectedPcm =
-          File('test/fixtures/stereo_16_44100.pcm').readAsBytesSync();
+      expectedPcm = File('test/fixtures/stereo_16_44100.pcm').readAsBytesSync();
     });
 
     test('STREAMINFO', () {
@@ -618,8 +623,7 @@ void main() {
 
     setUp(() {
       reader = FlacReader.fromFileSync('test/fixtures/mono_8_16000.flac');
-      expectedPcm =
-          File('test/fixtures/mono_8_16000.pcm').readAsBytesSync();
+      expectedPcm = File('test/fixtures/mono_8_16000.pcm').readAsBytesSync();
     });
 
     test('STREAMINFO', () {
@@ -647,8 +651,7 @@ void main() {
 
     setUp(() {
       reader = FlacReader.fromFileSync('test/fixtures/stereo_24_96000.flac');
-      expectedPcm =
-          File('test/fixtures/stereo_24_96000.pcm').readAsBytesSync();
+      expectedPcm = File('test/fixtures/stereo_24_96000.pcm').readAsBytesSync();
     });
 
     test('STREAMINFO', () {
@@ -801,8 +804,8 @@ void main() {
       cs.addAll(List.filled(13, 0));
       cs.add(0);
 
-      final bytes = _buildFlacWithBlock(
-          BlockType.cueSheet, true, Uint8List.fromList(cs));
+      final bytes =
+          _buildFlacWithBlock(BlockType.cueSheet, true, Uint8List.fromList(cs));
       final reader = FlacReader.fromBytes(bytes);
       final cuesheet = reader.cueSheet;
       expect(cuesheet, isNotNull);
@@ -846,10 +849,10 @@ void main() {
   group('Multiple metadata blocks per type', () {
     test('picturesAll exposes every PICTURE block', () {
       // Build a stream with two PICTURE blocks back-to-back.
-      final pic1 = _buildPictureBlockData(PictureType.coverFront,
-          'image/jpeg', Uint8List.fromList([0x11]));
-      final pic2 = _buildPictureBlockData(PictureType.coverBack,
-          'image/png', Uint8List.fromList([0x22]));
+      final pic1 = _buildPictureBlockData(
+          PictureType.coverFront, 'image/jpeg', Uint8List.fromList([0x11]));
+      final pic2 = _buildPictureBlockData(
+          PictureType.coverBack, 'image/png', Uint8List.fromList([0x22]));
 
       final si = _buildStreamInfoBytes();
       final bytes = Uint8List.fromList([
@@ -864,14 +867,11 @@ void main() {
       final reader = FlacReader.fromBytes(bytes);
       expect(reader.pictures.length, equals(2));
       expect(reader.picturesAll.length, equals(2));
-      expect(reader.pictures[0].pictureType,
-          equals(PictureType.coverFront));
-      expect(reader.pictures[1].pictureType,
-          equals(PictureType.coverBack));
+      expect(reader.pictures[0].pictureType, equals(PictureType.coverFront));
+      expect(reader.pictures[1].pictureType, equals(PictureType.coverBack));
     });
 
-    test('cueSheetsAll returns every CUESHEET; cueSheet returns the first',
-        () {
+    test('cueSheetsAll returns every CUESHEET; cueSheet returns the first', () {
       final cs1 = _buildMinimalCueSheetData(leadIn: 1000);
       final cs2 = _buildMinimalCueSheetData(leadIn: 2000);
 
@@ -980,8 +980,7 @@ void main() {
       final info = decoder.onStreamInfo;
       // Feed just the metadata region (everything up to the first frame).
       final reader = FlacReader.fromBytes(bytes);
-      decoder.addBytes(
-          Uint8List.sublistView(bytes, 0, reader.audioDataOffset));
+      decoder.addBytes(Uint8List.sublistView(bytes, 0, reader.audioDataOffset));
       final streamInfo = await info;
       expect(streamInfo.sampleRate, equals(44100));
       expect(streamInfo.channels, equals(2));
@@ -1079,16 +1078,15 @@ void main() {
   group('decodeFlacFileToPcm / decodeFlacBytesToPcm', () {
     test('file-based helper returns 16-bit PCM matching the original source',
         () async {
-      final pcm = await decodeFlacFileToPcm(
-          'test/fixtures/stereo_16_44100.flac');
+      final pcm =
+          await decodeFlacFileToPcm('test/fixtures/stereo_16_44100.flac');
       final expected =
           File('test/fixtures/stereo_16_44100.pcm').readAsBytesSync();
       expect(pcm, equals(expected));
     });
 
     test('bytes-based helper returns identical output', () {
-      final flac =
-          File('test/fixtures/stereo_16_44100.flac').readAsBytesSync();
+      final flac = File('test/fixtures/stereo_16_44100.flac').readAsBytesSync();
       final expected =
           File('test/fixtures/stereo_16_44100.pcm').readAsBytesSync();
       final pcm = decodeFlacBytesToPcm(flac);
@@ -1098,8 +1096,8 @@ void main() {
     test('runs cleanly under Isolate.run', () async {
       // This is the call pattern that motivated the helper — no FlacReader
       // instance crosses the isolate boundary, only the path and the bytes.
-      final pcm = await Isolate.run(() =>
-          decodeFlacFileToPcm('test/fixtures/stereo_16_44100.flac'));
+      final pcm = await Isolate.run(
+          () => decodeFlacFileToPcm('test/fixtures/stereo_16_44100.flac'));
       final expected =
           File('test/fixtures/stereo_16_44100.pcm').readAsBytesSync();
       expect(pcm, equals(expected));
@@ -1117,8 +1115,7 @@ void main() {
   });
 
   group('writeWavBytes', () {
-    test('produces a RIFF/WAVE buffer whose PCM equals the encoder input',
-        () {
+    test('produces a RIFF/WAVE buffer whose PCM equals the encoder input', () {
       final reader =
           FlacReader.fromFileSync('test/fixtures/stereo_16_44100.flac');
       final originalPcm =
@@ -1141,8 +1138,7 @@ void main() {
     });
 
     test('8-bit WAV applies the unsigned bias', () {
-      final reader =
-          FlacReader.fromFileSync('test/fixtures/mono_8_16000.flac');
+      final reader = FlacReader.fromFileSync('test/fixtures/mono_8_16000.flac');
       final originalSignedPcm =
           File('test/fixtures/mono_8_16000.pcm').readAsBytesSync();
 
@@ -1172,7 +1168,8 @@ void main() {
 /// [bitsPerSample] (rounded up to the next whole byte).
 Uint8List _samplesToLePcm(Int32List samples, int bitsPerSample) {
   final bytesPerSample = (bitsPerSample + 7) ~/ 8;
-  final mask = bytesPerSample == 4 ? 0xFFFFFFFF : (1 << (bytesPerSample * 8)) - 1;
+  final mask =
+      bytesPerSample == 4 ? 0xFFFFFFFF : (1 << (bytesPerSample * 8)) - 1;
   final out = Uint8List(samples.length * bytesPerSample);
   var o = 0;
   for (final s in samples) {
@@ -1277,19 +1274,19 @@ List<int> _buildConstantStereoFrame({
   bw.alignToByte();
   final header = bw.toBytes();
   final headerCrc = _crc8(header);
-  final bw2 = _BitWriter()..writeAllBytes(header)..writeBits(headerCrc, 8);
+  final bw2 = _BitWriter()
+    ..writeAllBytes(header)
+    ..writeBits(headerCrc, 8);
 
   // Subframe 0: CONSTANT, no wasted bits, value at bitsPerSample (+1 if side).
-  final ch0Bits =
-      bitsPerSample + _sideExtra(channelAssignment, 0);
+  final ch0Bits = bitsPerSample + _sideExtra(channelAssignment, 0);
   bw2.writeBit(0); // zero padding
   bw2.writeBits(0, 6); // type code 0 = CONSTANT
   bw2.writeBit(0); // no wasted bits
   bw2.writeSignedBits(ch0Value, ch0Bits);
 
   // Subframe 1.
-  final ch1Bits =
-      bitsPerSample + _sideExtra(channelAssignment, 1);
+  final ch1Bits = bitsPerSample + _sideExtra(channelAssignment, 1);
   bw2.writeBit(0);
   bw2.writeBits(0, 6);
   bw2.writeBit(0);
@@ -1324,7 +1321,9 @@ List<int> _buildConstantMonoFrameWithWastedBits({
   bw.alignToByte();
   final hdr = bw.toBytes();
   final crc = _crc8(hdr);
-  final bw2 = _BitWriter()..writeAllBytes(hdr)..writeBits(crc, 8);
+  final bw2 = _BitWriter()
+    ..writeAllBytes(hdr)
+    ..writeBits(crc, 8);
 
   // Subframe: zero bit, type=0 CONSTANT, wasted-bits flag=1,
   // unary encoding of (wastedBits - 1) + trailing 1.
@@ -1492,10 +1491,10 @@ List<int> _buildStreamInfoBytes() {
   // channels-1=1 (3-bit), bps-1=15 (5-bit),
   // total_samples=8 (36-bit), md5=0 (128-bit)
   return [
-    0x00, 0x04, 0x00, 0x04,          // min_bs=4, max_bs=4
+    0x00, 0x04, 0x00, 0x04, // min_bs=4, max_bs=4
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // min_fs=0, max_fs=0
-    0x0a, 0xc4, 0x42, 0xf0,          // sr=44100, ch=2, bps=16
-    0x00, 0x00, 0x00, 0x08,          // total_samples=8 (low 32 bits of 36-bit)
+    0x0a, 0xc4, 0x42, 0xf0, // sr=44100, ch=2, bps=16
+    0x00, 0x00, 0x00, 0x08, // total_samples=8 (low 32 bits of 36-bit)
     // MD5 (16 bytes)
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
