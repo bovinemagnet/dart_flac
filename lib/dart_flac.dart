@@ -4,7 +4,7 @@
 /// including metadata parsing and audio frame decoding.
 library dart_flac;
 
-export 'src/flac_reader.dart';
+export 'src/flac_reader.dart' show FlacReader, Md5VerificationResult;
 export 'src/metadata/metadata_block.dart';
 export 'src/metadata/stream_info.dart';
 export 'src/metadata/padding.dart';

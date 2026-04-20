@@ -115,12 +115,20 @@ class FrameParser {
   /// Returns the decoded [FlacFrame] and the offset of the first byte
   /// after the frame.
   (FlacFrame, int) parseFrame(int offset) {
+    final (header, r, _) = parseFrameHeader(offset);
+    return _parseFrameBody(header, r, offset);
+  }
+
+  /// Parses only the header of the frame starting at [offset].
+  ///
+  /// Returns a triple of (parsed header, the [BitReader] positioned just
+  /// after the header CRC-8, the absolute byte offset immediately after
+  /// the header CRC-8). The bit reader can be fed to [_parseFrameBody]
+  /// to continue decoding subframes, or discarded if only header info
+  /// is required (e.g. during seeking).
+  (FrameHeader, BitReader, int) parseFrameHeader(int offset) {
     final startOffset = offset;
     final r = BitReader.atOffset(_data, offset);
-
-    // -----------------------------------------------------------------------
-    // Frame header
-    // -----------------------------------------------------------------------
 
     // Sync code: 14 bits = 0x3FFE.
     final sync = r.readBits(14);
@@ -273,6 +281,18 @@ class FrameParser {
       number: number,
     );
 
+    return (header, r, r.bytePosition);
+  }
+
+  /// Decodes the subframes and footer for a frame whose header has already
+  /// been parsed.
+  (FlacFrame, int) _parseFrameBody(
+      FrameHeader header, BitReader r, int startOffset) {
+    final channelCount = header.channelCount;
+    final blockSize = header.blockSize;
+    final bitsPerSample = header.bitsPerSample;
+    final channelAssignment = header.channelAssignment;
+
     // -----------------------------------------------------------------------
     // Subframes (one per channel)
     // -----------------------------------------------------------------------
@@ -367,19 +387,62 @@ class FrameParser {
   /// Parses all audio frames starting at [audioDataOffset] in the buffer.
   ///
   /// Stops when either the end of the buffer is reached or no valid sync code
-  /// is found.
+  /// is found. Any malformed frame (e.g. CRC failure) throws and aborts the
+  /// whole parse — see [parseAllFramesTolerant] for a recovery variant.
   List<FlacFrame> parseAllFrames(int audioDataOffset) {
     final frames = <FlacFrame>[];
     var offset = audioDataOffset;
     while (offset + 2 <= _data.length) {
-      // Quick sync check: 0xFF followed by 0xF8-0xFF.
-      if (_data[offset] != 0xFF || (_data[offset + 1] & 0xFC) != 0xF8) {
-        break;
-      }
+      if (!_looksLikeFrameSync(offset)) break;
       final (frame, nextOffset) = parseFrame(offset);
       frames.add(frame);
       offset = nextOffset;
     }
     return frames;
+  }
+
+  /// Like [parseAllFrames], but on any [FormatException] thrown by
+  /// [parseFrame] (corrupt sync, bad CRC, truncated subframe) it scans
+  /// forward for the next valid frame sync code and resumes decoding.
+  ///
+  /// The [onError] callback is invoked once per dropped frame with the
+  /// offset at which the failure occurred and the raised error.
+  List<FlacFrame> parseAllFramesTolerant(int audioDataOffset,
+      {required void Function(int offset, Object error) onError}) {
+    final frames = <FlacFrame>[];
+    var offset = audioDataOffset;
+    while (offset + 2 <= _data.length) {
+      if (!_looksLikeFrameSync(offset)) {
+        final next = findNextFrameSync(offset + 1);
+        if (next < 0) break;
+        offset = next;
+        continue;
+      }
+      try {
+        final (frame, nextOffset) = parseFrame(offset);
+        frames.add(frame);
+        offset = nextOffset;
+      } on FormatException catch (e) {
+        onError(offset, e);
+        final next = findNextFrameSync(offset + 1);
+        if (next < 0) break;
+        offset = next;
+      }
+    }
+    return frames;
+  }
+
+  /// Returns the byte offset of the next plausible frame sync code at or
+  /// after [offset], or -1 if none is found before end-of-buffer.
+  int findNextFrameSync(int offset) {
+    for (var i = offset; i + 1 < _data.length; i++) {
+      if (_data[i] == 0xFF && (_data[i + 1] & 0xFC) == 0xF8) return i;
+    }
+    return -1;
+  }
+
+  bool _looksLikeFrameSync(int offset) {
+    if (offset + 1 >= _data.length) return false;
+    return _data[offset] == 0xFF && (_data[offset + 1] & 0xFC) == 0xF8;
   }
 }

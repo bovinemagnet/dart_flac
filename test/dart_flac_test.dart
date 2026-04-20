@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:dart_flac/dart_flac.dart';
 import 'package:dart_flac/src/bit_reader.dart';
 import 'package:dart_flac/src/crc.dart';
@@ -436,6 +437,136 @@ void main() {
       expect(unknown.first.rawData, equals(unknownData));
     });
   });
+
+  group('MD5 verification', () {
+    // Expected decoded PCM for _minimalFlac:
+    //   Frame 0: 4 samples of [left=1000, right=-500]
+    //   Frame 1: 4 samples of [left=0, right=0]
+    // Written as 16-bit LE signed and interleaved: 32 bytes.
+    final expectedPcm = Uint8List.fromList([
+      // 4 × (1000, -500) as two int16 LE each
+      0xE8, 0x03, 0x0C, 0xFE,
+      0xE8, 0x03, 0x0C, 0xFE,
+      0xE8, 0x03, 0x0C, 0xFE,
+      0xE8, 0x03, 0x0C, 0xFE,
+      // 4 × (0, 0)
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+    ]);
+    final expectedMd5 = Uint8List.fromList(md5.convert(expectedPcm).bytes);
+
+    test('returns match when signature equals computed MD5', () {
+      final bytes = _minimalFlacWithMd5(expectedMd5);
+      final reader = FlacReader.fromBytes(bytes);
+      expect(reader.verifyMd5(), equals(Md5VerificationResult.match));
+    });
+
+    test('returns notComputed when signature is all zeros', () {
+      // _minimalFlac already has md5 = all zeros.
+      final reader = FlacReader.fromBytes(_minimalFlac);
+      expect(reader.verifyMd5(), equals(Md5VerificationResult.notComputed));
+    });
+
+    test('returns mismatch when signature is wrong', () {
+      final bogus = Uint8List.fromList(List.filled(16, 0xAA));
+      final bytes = _minimalFlacWithMd5(bogus);
+      final reader = FlacReader.fromBytes(bytes);
+      expect(reader.verifyMd5(), equals(Md5VerificationResult.mismatch));
+    });
+  });
+
+  group('ID3v2 tolerance', () {
+    test('parses a FLAC file preceded by an ID3v2 tag', () {
+      // 10-byte ID3v2 header + 20 bytes of dummy tag body.
+      const tagBody = 20;
+      final id3 = <int>[
+        0x49, 0x44, 0x33, // "ID3"
+        0x03, 0x00, // version 3.0
+        0x00, // flags (no footer)
+        // synchsafe size of 20:
+        0x00, 0x00, 0x00, 0x14,
+      ];
+      final buf = Uint8List.fromList([
+        ...id3,
+        ...List.filled(tagBody, 0x00),
+        ..._minimalFlac,
+      ]);
+      final reader = FlacReader.fromBytes(buf);
+      expect(reader.streamInfo.sampleRate, equals(44100));
+      // audioDataOffset is measured from the start of the buffer we handed in,
+      // so it must account for the skipped ID3v2 prefix.
+      expect(reader.audioDataOffset, equals(10 + tagBody + 42));
+    });
+
+    test('rejects a buffer that has neither ID3v2 nor fLaC marker', () {
+      final bad = Uint8List.fromList(List.filled(16, 0));
+      expect(() => FlacReader.fromBytes(bad), throwsFormatException);
+    });
+  });
+
+  group('Frame resync', () {
+    test('strict decode throws on a corrupted frame', () {
+      final corrupted = Uint8List.fromList(_minimalFlac);
+      // Flip a byte inside the first frame body, after the sync/CRC-8.
+      // Byte at offset 51 is in the middle of frame 0's subframe data.
+      corrupted[51] ^= 0xFF;
+      final reader = FlacReader.fromBytes(corrupted);
+      expect(() => reader.decodeFrames(), throwsFormatException);
+    });
+
+    test('tolerant decode skips the bad frame and reports it', () {
+      final corrupted = Uint8List.fromList(_minimalFlac);
+      corrupted[51] ^= 0xFF;
+      final reader = FlacReader.fromBytes(corrupted);
+      final errors = <int>[];
+      final frames = reader.decodeFrames(
+        recoverFromCorruption: true,
+        onCorruption: (offset, _) => errors.add(offset),
+      );
+      // With one frame dropped, we expect 0 or 1 surviving frame (depends on
+      // whether the tolerant scanner locks onto frame 1's sync). Either way,
+      // the error callback must fire at least once.
+      expect(errors, isNotEmpty);
+      expect(frames.length, lessThan(2));
+    });
+  });
+
+  group('Seek by sample', () {
+    test('byteOffsetForSample(0) points at the first frame', () {
+      final reader = FlacReader.fromBytes(_minimalFlac);
+      expect(reader.byteOffsetForSample(0), equals(reader.audioDataOffset));
+    });
+
+    test('byteOffsetForSample crosses into the second frame', () {
+      final reader = FlacReader.fromBytes(_minimalFlac);
+      // Frame 0 has 4 samples → sample 4 is the first sample of frame 1.
+      final frameOneOffset = reader.byteOffsetForSample(4);
+      expect(frameOneOffset, greaterThan(reader.audioDataOffset));
+      // Decoding from that offset should yield frame 1 only.
+      final tail = reader.decodeFramesFromSample(4);
+      expect(tail.length, equals(1));
+      expect(tail.first.channelSamples[0], everyElement(equals(0)));
+    });
+
+    test('byteOffsetForSample beyond end throws RangeError', () {
+      final reader = FlacReader.fromBytes(_minimalFlac);
+      expect(() => reader.byteOffsetForSample(8), throwsRangeError);
+      expect(() => reader.byteOffsetForSample(-1), throwsRangeError);
+    });
+  });
+}
+
+/// Returns a copy of [_minimalFlac] with STREAMINFO.md5 replaced by [md5].
+Uint8List _minimalFlacWithMd5(Uint8List md5) {
+  assert(md5.length == 16);
+  // STREAMINFO body starts at offset 8; md5 is its final 16 bytes (26..41).
+  final out = Uint8List.fromList(_minimalFlac);
+  for (var i = 0; i < 16; i++) {
+    out[26 + i] = md5[i];
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
