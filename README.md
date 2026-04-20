@@ -33,7 +33,7 @@ audio sink.
 
 ```yaml
 dependencies:
-  dart_flac: ^0.2.0
+  dart_flac: ^0.0.1
 ```
 
 ## Quick start
