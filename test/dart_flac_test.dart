@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -1022,6 +1023,46 @@ void main() {
       await sub.asFuture<void>();
 
       expect(gotBuilder.takeBytes(), equals(expected.takeBytes()));
+    });
+  });
+
+  group('decodeFlacFileToPcm / decodeFlacBytesToPcm', () {
+    test('file-based helper returns 16-bit PCM matching the original source',
+        () async {
+      final pcm = await decodeFlacFileToPcm(
+          'test/fixtures/stereo_16_44100.flac');
+      final expected =
+          File('test/fixtures/stereo_16_44100.pcm').readAsBytesSync();
+      expect(pcm, equals(expected));
+    });
+
+    test('bytes-based helper returns identical output', () {
+      final flac =
+          File('test/fixtures/stereo_16_44100.flac').readAsBytesSync();
+      final expected =
+          File('test/fixtures/stereo_16_44100.pcm').readAsBytesSync();
+      final pcm = decodeFlacBytesToPcm(flac);
+      expect(pcm, equals(expected));
+    });
+
+    test('runs cleanly under Isolate.run', () async {
+      // This is the call pattern that motivated the helper — no FlacReader
+      // instance crosses the isolate boundary, only the path and the bytes.
+      final pcm = await Isolate.run(() =>
+          decodeFlacFileToPcm('test/fixtures/stereo_16_44100.flac'));
+      final expected =
+          File('test/fixtures/stereo_16_44100.pcm').readAsBytesSync();
+      expect(pcm, equals(expected));
+    });
+
+    test('outputBitsPerSample=24 on a 24-bit source preserves full depth',
+        () async {
+      final pcm = await decodeFlacFileToPcm(
+          'test/fixtures/stereo_24_96000.flac',
+          outputBitsPerSample: 24);
+      final expected =
+          File('test/fixtures/stereo_24_96000.pcm').readAsBytesSync();
+      expect(pcm, equals(expected));
     });
   });
 

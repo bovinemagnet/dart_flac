@@ -98,6 +98,25 @@ for (final frame in reader.decodeFramesFromSample(thirtySeconds)) {
 }
 ```
 
+### Decode inside an isolate (background thread)
+
+When you want decoding off the UI thread — e.g. analysing a track while
+the user scrolls a library — use the isolate-safe top-level helper. It
+takes only a path and returns only bytes, so nothing stateful crosses
+the isolate boundary:
+
+```dart
+import 'dart:isolate';
+import 'package:dart_flac/dart_flac.dart';
+
+final pcm = await Isolate.run(
+  () => decodeFlacFileToPcm('track.flac', outputBitsPerSample: 16),
+);
+```
+
+A byte-based companion — `decodeFlacBytesToPcm(flacBytes)` — works the
+same way and runs on web, where `dart:io` isn't available.
+
 ### Convert FLAC to WAV
 
 ```dart

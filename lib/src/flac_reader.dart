@@ -30,6 +30,50 @@ enum Md5VerificationResult {
 /// The magic 4-byte marker that starts every valid FLAC file.
 const _flacMarker = [0x66, 0x4C, 0x61, 0x43]; // "fLaC"
 
+/// Decodes a FLAC file at [path] and returns the entire audio track as
+/// interleaved, little-endian, signed PCM bytes.
+///
+/// Isolate-safe: the function takes only a `String` and returns only a
+/// `Uint8List`, both of which cross isolate boundaries cleanly. A typical
+/// call site looks like:
+///
+/// ```dart
+/// final pcm = await Isolate.run(() => decodeFlacFileToPcm('track.flac'));
+/// ```
+///
+/// [outputBitsPerSample] defaults to 16 — the width almost every audio
+/// sink (`flutter_sound`, Web Audio API, etc.) accepts without extra
+/// conversion. Pass the stream's native depth (or any of 8/16/24/32) to
+/// preserve full resolution.
+///
+/// VM / AOT / Flutter mobile / Flutter desktop only. On web, use
+/// [decodeFlacBytesToPcm] instead — `dart:io` file I/O is not available.
+Future<Uint8List> decodeFlacFileToPcm(String path,
+    {int outputBitsPerSample = 16}) async {
+  final reader = await FlacReader.fromFile(path);
+  return _readerToPcm(reader, outputBitsPerSample);
+}
+
+/// Isolate-safe companion to [decodeFlacFileToPcm] that takes raw FLAC
+/// bytes instead of a filesystem path.
+///
+/// Works on every platform, including the web. Use this when you already
+/// have the file contents in memory — e.g. from an HTTP response, a
+/// `<input type="file">` upload, or a `rootBundle.load()` call.
+Uint8List decodeFlacBytesToPcm(Uint8List flacBytes,
+    {int outputBitsPerSample = 16}) {
+  final reader = FlacReader.fromBytes(flacBytes);
+  return _readerToPcm(reader, outputBitsPerSample);
+}
+
+Uint8List _readerToPcm(FlacReader reader, int outputBitsPerSample) {
+  final builder = BytesBuilder(copy: false);
+  for (final chunk in reader.pcmChunks(outputBitsPerSample: outputBitsPerSample)) {
+    builder.add(chunk);
+  }
+  return builder.takeBytes();
+}
+
 /// High-level FLAC file reader.
 ///
 /// Reads a FLAC file from disk (or from a [Uint8List] byte buffer), parses

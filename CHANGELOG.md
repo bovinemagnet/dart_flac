@@ -51,6 +51,11 @@ Initial release.
   helper used by both the pull and push APIs.
 - `writeWavBytes(…)` — produces a RIFF/WAVE byte buffer at 8/16/24/
   32-bit (8-bit output applies the unsigned WAV bias).
+- `decodeFlacFileToPcm(path, {outputBitsPerSample = 16})` /
+  `decodeFlacBytesToPcm(bytes, {outputBitsPerSample = 16})` —
+  top-level, isolate-safe one-shot decoders. Take only a path /
+  bytes, return only `Uint8List`, intended for `Isolate.run` call
+  sites.
 - `bin/flac2wav.dart` — command-line entry point installed via
   `dart run dart_flac:flac2wav`, with `--verify` option.
 

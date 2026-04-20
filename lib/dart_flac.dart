@@ -4,7 +4,12 @@
 /// including metadata parsing and audio frame decoding.
 library dart_flac;
 
-export 'src/flac_reader.dart' show FlacReader, Md5VerificationResult;
+export 'src/flac_reader.dart'
+    show
+        FlacReader,
+        Md5VerificationResult,
+        decodeFlacBytesToPcm,
+        decodeFlacFileToPcm;
 export 'src/pcm_output.dart' show frameToInterleavedPcm;
 export 'src/streaming_decoder.dart' show StreamingFlacDecoder;
 export 'src/wav_writer.dart' show writeWavBytes;
