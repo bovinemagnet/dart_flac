@@ -6,6 +6,9 @@ repository: https://github.com/bovinemagnet/dart_flac
 environment:
   sdk: ^3.0.0
 
+executables:
+  flac2wav:
+
 dependencies:
   crypto: ^3.0.0
 

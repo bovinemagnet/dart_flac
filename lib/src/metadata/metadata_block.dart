@@ -1,6 +1,41 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'application.dart';
+import 'cue_sheet.dart';
+import 'padding.dart';
+import 'picture.dart';
+import 'seek_table.dart';
+import 'stream_info.dart';
+import 'vorbis_comment.dart';
+
+/// Dispatches a raw metadata block to its typed parser.
+///
+/// Used by both the one-shot reader and the streaming decoder so they
+/// agree on how unknown block types are handled.
+MetadataBlock parseMetadataBlock(
+    int type, bool isLast, int length, Uint8List data) {
+  switch (type) {
+    case BlockType.streamInfo:
+      return StreamInfoBlock.parse(isLast, length, data);
+    case BlockType.padding:
+      return PaddingBlock.parse(isLast, length, data);
+    case BlockType.application:
+      return ApplicationBlock.parse(isLast, length, data);
+    case BlockType.seekTable:
+      return SeekTableBlock.parse(isLast, length, data);
+    case BlockType.vorbisComment:
+      return VorbisCommentBlock.parse(isLast, length, data);
+    case BlockType.cueSheet:
+      return CueSheetBlock.parse(isLast, length, data);
+    case BlockType.picture:
+      return PictureBlock.parse(isLast, length, data);
+    default:
+      return UnknownMetadataBlock(
+          blockType: type, isLast: isLast, length: length, rawData: data);
+  }
+}
+
 /// Block type identifiers for FLAC metadata blocks.
 abstract final class BlockType {
   /// Contains the minimum metadata for decoding the audio stream.

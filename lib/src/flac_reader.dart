@@ -155,6 +155,31 @@ class FlacReader {
     return parser.parseAllFrames(audioDataOffset);
   }
 
+  /// Returns a lazy iterable over the audio frames.
+  ///
+  /// Unlike [decodeFrames] — which decodes every frame before returning —
+  /// this iterator decodes one frame per pull. Consumers can stop early
+  /// (e.g. after enough samples for a playback buffer) and save the
+  /// memory that would otherwise be spent on the tail of the stream.
+  ///
+  /// The encoded byte buffer is still held in memory; only the decoded
+  /// PCM is streamed.
+  Iterable<FlacFrame> framesLazy() sync* {
+    final info = streamInfo;
+    final parser = FrameParser(
+      data: _data,
+      sampleRateFromStreamInfo: info.sampleRate,
+      bitsPerSampleFromStreamInfo: info.bitsPerSample,
+    );
+    var offset = audioDataOffset;
+    while (offset + 2 <= _data.length) {
+      if (_data[offset] != 0xFF || (_data[offset + 1] & 0xFC) != 0xF8) break;
+      final (frame, nextOffset) = parser.parseFrame(offset);
+      yield frame;
+      offset = nextOffset;
+    }
+  }
+
   /// Verifies that re-decoding the audio produces PCM whose MD5 matches
   /// the signature stored in STREAMINFO.
   ///
@@ -348,33 +373,10 @@ class FlacReader {
     final blockData = data.sublist(offset, offset + length);
     offset += length;
 
-    final block = _parseBlock(type, isLast, length, blockData);
+    final block = parseMetadataBlock(type, isLast, length, blockData);
     blocks.add(block);
 
     if (isLast) break;
   }
   return (blocks, offset);
-}
-
-MetadataBlock _parseBlock(
-    int type, bool isLast, int length, Uint8List data) {
-  switch (type) {
-    case BlockType.streamInfo:
-      return StreamInfoBlock.parse(isLast, length, data);
-    case BlockType.padding:
-      return PaddingBlock.parse(isLast, length, data);
-    case BlockType.application:
-      return ApplicationBlock.parse(isLast, length, data);
-    case BlockType.seekTable:
-      return SeekTableBlock.parse(isLast, length, data);
-    case BlockType.vorbisComment:
-      return VorbisCommentBlock.parse(isLast, length, data);
-    case BlockType.cueSheet:
-      return CueSheetBlock.parse(isLast, length, data);
-    case BlockType.picture:
-      return PictureBlock.parse(isLast, length, data);
-    default:
-      return UnknownMetadataBlock(
-          blockType: type, isLast: isLast, length: length, rawData: data);
-  }
 }

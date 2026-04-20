@@ -846,6 +846,153 @@ void main() {
       expect(reader.audioDataOffset, equals(10 + tagBody + 10 + 42));
     });
   });
+
+  group('framesLazy', () {
+    test('yields the same frames as decodeFrames', () {
+      final reader =
+          FlacReader.fromFileSync('test/fixtures/stereo_16_44100.flac');
+      final lazy = reader.framesLazy().toList();
+      final eager = reader.decodeFrames();
+      expect(lazy.length, equals(eager.length));
+      for (var i = 0; i < lazy.length; i++) {
+        expect(lazy[i].blockSize, equals(eager[i].blockSize));
+        expect(lazy[i].channelSamples[0], equals(eager[i].channelSamples[0]));
+        expect(lazy[i].channelSamples[1], equals(eager[i].channelSamples[1]));
+      }
+    });
+
+    test('can stop after the first frame', () {
+      final reader =
+          FlacReader.fromFileSync('test/fixtures/stereo_16_44100.flac');
+      final first = reader.framesLazy().first;
+      expect(first.blockSize, equals(128));
+    });
+
+    test('take(n) only decodes n frames', () {
+      final reader =
+          FlacReader.fromFileSync('test/fixtures/stereo_16_44100.flac');
+      final two = reader.framesLazy().take(2).toList();
+      expect(two.length, equals(2));
+    });
+  });
+
+  group('StreamingFlacDecoder', () {
+    test('byte-by-byte ingest produces identical frames to batch decode',
+        () async {
+      final bytes =
+          File('test/fixtures/stereo_16_44100.flac').readAsBytesSync();
+      final reference = FlacReader.fromBytes(bytes).decodeFrames();
+
+      final decoder = StreamingFlacDecoder();
+      final collected = <FlacFrame>[];
+      final sub = decoder.frames.listen(collected.add);
+
+      // Feed in small variably-sized chunks to exercise the buffering.
+      for (var i = 0; i < bytes.length; i += 37) {
+        final end = (i + 37).clamp(0, bytes.length);
+        decoder.addBytes(Uint8List.sublistView(bytes, i, end));
+      }
+      decoder.close();
+      await sub.asFuture<void>();
+
+      expect(collected.length, equals(reference.length));
+      for (var f = 0; f < reference.length; f++) {
+        expect(collected[f].blockSize, equals(reference[f].blockSize));
+        for (var c = 0; c < reference[f].channelCount; c++) {
+          expect(collected[f].channelSamples[c],
+              equals(reference[f].channelSamples[c]),
+              reason: 'frame $f channel $c sample mismatch');
+        }
+      }
+    });
+
+    test('emits STREAMINFO via onStreamInfo before frames', () async {
+      final bytes =
+          File('test/fixtures/stereo_16_44100.flac').readAsBytesSync();
+      final decoder = StreamingFlacDecoder();
+      final info = decoder.onStreamInfo;
+      // Feed just the metadata region (everything up to the first frame).
+      final reader = FlacReader.fromBytes(bytes);
+      decoder.addBytes(
+          Uint8List.sublistView(bytes, 0, reader.audioDataOffset));
+      final streamInfo = await info;
+      expect(streamInfo.sampleRate, equals(44100));
+      expect(streamInfo.channels, equals(2));
+      decoder.close();
+    });
+
+    test('tolerates leading ID3v2 tag fed in pieces', () async {
+      final flac = _minimalFlac;
+      final id3 = <int>[
+        0x49, 0x44, 0x33, 0x03, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x05, // synchsafe size 5
+        0, 0, 0, 0, 0, // 5-byte body
+      ];
+      final combined = Uint8List.fromList([...id3, ...flac]);
+
+      final decoder = StreamingFlacDecoder();
+      final frames = <FlacFrame>[];
+      final sub = decoder.frames.listen(frames.add);
+
+      // Feed one byte at a time — worst case for the buffering logic.
+      for (final b in combined) {
+        decoder.addBytes(Uint8List.fromList([b]));
+      }
+      decoder.close();
+      await sub.asFuture<void>();
+
+      final info = await decoder.onStreamInfo;
+      expect(info.sampleRate, equals(44100));
+      expect(frames.length, equals(2));
+    });
+  });
+
+  group('writeWavBytes', () {
+    test('produces a RIFF/WAVE buffer whose PCM equals the encoder input',
+        () {
+      final reader =
+          FlacReader.fromFileSync('test/fixtures/stereo_16_44100.flac');
+      final originalPcm =
+          File('test/fixtures/stereo_16_44100.pcm').readAsBytesSync();
+
+      final wav = writeWavBytes(
+        frames: reader.decodeFrames(),
+        sampleRate: reader.streamInfo.sampleRate,
+        channels: reader.streamInfo.channels,
+        bitsPerSample: reader.streamInfo.bitsPerSample,
+      );
+
+      // Header checks.
+      expect(wav.length, equals(44 + originalPcm.length));
+      expect(String.fromCharCodes(wav.sublist(0, 4)), equals('RIFF'));
+      expect(String.fromCharCodes(wav.sublist(8, 12)), equals('WAVE'));
+      expect(String.fromCharCodes(wav.sublist(12, 16)), equals('fmt '));
+      // Payload equals the original PCM byte for byte.
+      expect(wav.sublist(44), equals(originalPcm));
+    });
+
+    test('8-bit WAV applies the unsigned bias', () {
+      final reader =
+          FlacReader.fromFileSync('test/fixtures/mono_8_16000.flac');
+      final originalSignedPcm =
+          File('test/fixtures/mono_8_16000.pcm').readAsBytesSync();
+
+      final wav = writeWavBytes(
+        frames: reader.decodeFrames(),
+        sampleRate: reader.streamInfo.sampleRate,
+        channels: reader.streamInfo.channels,
+        bitsPerSample: reader.streamInfo.bitsPerSample,
+      );
+
+      // WAV body should be the signed PCM shifted by +128.
+      final body = wav.sublist(44);
+      expect(body.length, equals(originalSignedPcm.length));
+      for (var i = 0; i < body.length; i++) {
+        final signed = originalSignedPcm[i].toSigned(8);
+        expect(body[i], equals((signed + 128) & 0xFF));
+      }
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
