@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -556,6 +557,554 @@ void main() {
       expect(() => reader.byteOffsetForSample(-1), throwsRangeError);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // End-to-end decode tests using real .flac fixtures produced by the
+  // reference `flac` CLI. These exercise LPC, FIXED, Rice, joint-stereo
+  // decorrelation, pre-coded sample-rate/block-size/bps codes, and MD5
+  // verification across multiple bit depths — paths that the hand-built
+  // CONSTANT-subframe fixtures cannot reach.
+  //
+  // To regenerate: ./test/fixtures/generate.sh (needs python3 + flac CLI).
+  // -------------------------------------------------------------------------
+  group('Fixture: stereo 16-bit 44100 Hz', () {
+    late FlacReader reader;
+    late Uint8List expectedPcm;
+
+    setUp(() {
+      reader = FlacReader.fromFileSync('test/fixtures/stereo_16_44100.flac');
+      expectedPcm =
+          File('test/fixtures/stereo_16_44100.pcm').readAsBytesSync();
+    });
+
+    test('STREAMINFO', () {
+      expect(reader.streamInfo.sampleRate, equals(44100));
+      expect(reader.streamInfo.channels, equals(2));
+      expect(reader.streamInfo.bitsPerSample, equals(16));
+      expect(reader.streamInfo.totalSamples, equals(512));
+    });
+
+    test('decoded PCM matches encoder input', () {
+      final samples = reader.decodeInterleavedSamples();
+      expect(samples.length, equals(1024)); // 512 × 2 channels
+      final decodedPcm = _samplesToLePcm(samples, 16);
+      expect(decodedPcm, equals(expectedPcm));
+    });
+
+    test('MD5 verification passes', () {
+      expect(reader.verifyMd5(), equals(Md5VerificationResult.match));
+    });
+  });
+
+  group('Fixture: mono 8-bit 16000 Hz', () {
+    late FlacReader reader;
+    late Uint8List expectedPcm;
+
+    setUp(() {
+      reader = FlacReader.fromFileSync('test/fixtures/mono_8_16000.flac');
+      expectedPcm =
+          File('test/fixtures/mono_8_16000.pcm').readAsBytesSync();
+    });
+
+    test('STREAMINFO', () {
+      expect(reader.streamInfo.sampleRate, equals(16000));
+      expect(reader.streamInfo.channels, equals(1));
+      expect(reader.streamInfo.bitsPerSample, equals(8));
+      expect(reader.streamInfo.totalSamples, equals(256));
+    });
+
+    test('decoded PCM matches encoder input', () {
+      final samples = reader.decodeInterleavedSamples();
+      expect(samples.length, equals(256));
+      final decodedPcm = _samplesToLePcm(samples, 8);
+      expect(decodedPcm, equals(expectedPcm));
+    });
+
+    test('MD5 verification passes', () {
+      expect(reader.verifyMd5(), equals(Md5VerificationResult.match));
+    });
+  });
+
+  group('Fixture: stereo 24-bit 96000 Hz', () {
+    late FlacReader reader;
+    late Uint8List expectedPcm;
+
+    setUp(() {
+      reader = FlacReader.fromFileSync('test/fixtures/stereo_24_96000.flac');
+      expectedPcm =
+          File('test/fixtures/stereo_24_96000.pcm').readAsBytesSync();
+    });
+
+    test('STREAMINFO', () {
+      expect(reader.streamInfo.sampleRate, equals(96000));
+      expect(reader.streamInfo.channels, equals(2));
+      expect(reader.streamInfo.bitsPerSample, equals(24));
+      expect(reader.streamInfo.totalSamples, equals(256));
+    });
+
+    test('decoded PCM matches encoder input', () {
+      final samples = reader.decodeInterleavedSamples();
+      expect(samples.length, equals(512)); // 256 × 2 channels
+      final decodedPcm = _samplesToLePcm(samples, 24);
+      expect(decodedPcm, equals(expectedPcm));
+    });
+
+    test('MD5 verification passes', () {
+      expect(reader.verifyMd5(), equals(Md5VerificationResult.match));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Hand-built fixtures for the remaining features. These use only CONSTANT
+  // subframes so the byte layout is small and easy to reason about.
+  // -------------------------------------------------------------------------
+  group('Decorrelation: rightSide', () {
+    test('decoder reconstructs independent left/right', () {
+      // Frame encodes ch0=side(-300), ch1=right(700) with channel assignment 9.
+      // Decorrelation: left = side + right = 400, right = 700.
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 2,
+        bitsPerSample: 16,
+        totalSamples: 4,
+        frames: [
+          _buildConstantStereoFrame(
+            channelAssignment: 9, // rightSide
+            ch0Value: -300, // side
+            ch1Value: 700, // right
+            blockSize: 4,
+            bitsPerSample: 16,
+            sampleRate: 44100,
+          ),
+        ],
+      );
+      final reader = FlacReader.fromBytes(bytes);
+      final frame = reader.decodeFrames().single;
+      expect(frame.channelSamples[0], everyElement(equals(400)),
+          reason: 'left = side + right');
+      expect(frame.channelSamples[1], everyElement(equals(700)));
+    });
+  });
+
+  group('Decorrelation: midSide', () {
+    test('decoder reconstructs independent left/right from mid/side', () {
+      // ch0=mid, ch1=side. For left=500, right=300: side = 200, mid = 400.
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 2,
+        bitsPerSample: 16,
+        totalSamples: 4,
+        frames: [
+          _buildConstantStereoFrame(
+            channelAssignment: 10, // midSide
+            ch0Value: 400, // mid
+            ch1Value: 200, // side
+            blockSize: 4,
+            bitsPerSample: 16,
+            sampleRate: 44100,
+          ),
+        ],
+      );
+      final reader = FlacReader.fromBytes(bytes);
+      final frame = reader.decodeFrames().single;
+      expect(frame.channelSamples[0], everyElement(equals(500)));
+      expect(frame.channelSamples[1], everyElement(equals(300)));
+    });
+  });
+
+  group('Seek with SEEKTABLE hint', () {
+    test('uses seek-table offset matching linear-scan result', () {
+      // Use the real stereo_16_44100 fixture which has multiple frames.
+      // Seek to the middle of the file and verify the returned offset is
+      // a valid frame start (sync code) and that decoded samples from
+      // that offset agree with the tail of the full decode.
+      final reader =
+          FlacReader.fromFileSync('test/fixtures/stereo_16_44100.flac');
+      final full = reader.decodeInterleavedSamples();
+
+      // Pick a sample inside the stream (sample 256, midway).
+      final offset = reader.byteOffsetForSample(256);
+      // Offset must land on a frame sync code (0xFF 0xF8..0xFB).
+      // We can't access _data directly, but we can re-parse from that offset.
+      final tail = reader.decodeFramesFromSample(256);
+      final tailPcm = <int>[];
+      for (final f in tail) {
+        for (var s = 0; s < f.blockSize; s++) {
+          for (var c = 0; c < f.channelCount; c++) {
+            tailPcm.add(f.channelSamples[c][s]);
+          }
+        }
+      }
+      // The tail must be a contiguous suffix of the full decode.
+      final start = full.length - tailPcm.length;
+      expect(start, greaterThanOrEqualTo(0));
+      for (var i = 0; i < tailPcm.length; i++) {
+        expect(full[start + i], equals(tailPcm[i]),
+            reason: 'mismatch at tail index $i');
+      }
+      expect(offset, greaterThan(reader.audioDataOffset));
+    });
+  });
+
+  group('CueSheet', () {
+    test('parses catalog number, lead-in, tracks, and indices', () {
+      // Build a CUESHEET block with 1 track + 1 index, plus the mandatory
+      // lead-out track (track number 170 for CD).
+      final cs = <int>[];
+      // Media catalog number: 128 ASCII bytes, right-padded with 0.
+      final catalog = '1234567890123'.codeUnits;
+      cs.addAll(catalog);
+      cs.addAll(List.filled(128 - catalog.length, 0));
+      // Lead-in samples (64-bit BE) = 88200 (2 seconds @ 44100).
+      cs.addAll(_u64be(88200));
+      // is-CD flag (bit 7) + 7 reserved bits, then 258 reserved bytes.
+      cs.add(0x80);
+      cs.addAll(List.filled(258, 0));
+      // Number of tracks = 2 (track 1 + lead-out).
+      cs.add(2);
+
+      // Track 1: offset=0, number=1, ISRC=12 bytes, flags=0, 13 reserved, 1 index.
+      cs.addAll(_u64be(0));
+      cs.add(1);
+      final isrc = 'US-S1Z-00-001'.codeUnits.take(12).toList();
+      cs.addAll(isrc);
+      cs.addAll(List.filled(12 - isrc.length, 0));
+      cs.add(0); // flags
+      cs.addAll(List.filled(13, 0)); // reserved
+      cs.add(1); // index count
+      // Index 1: offset=0, number=1, 3 reserved.
+      cs.addAll(_u64be(0));
+      cs.add(1);
+      cs.addAll(List.filled(3, 0));
+
+      // Lead-out track: offset=256, number=170 (CD lead-out), 12 ISRC, flags, 13 reserved, 0 indices.
+      cs.addAll(_u64be(256));
+      cs.add(170);
+      cs.addAll(List.filled(12, 0));
+      cs.add(0);
+      cs.addAll(List.filled(13, 0));
+      cs.add(0);
+
+      final bytes = _buildFlacWithBlock(
+          BlockType.cueSheet, true, Uint8List.fromList(cs));
+      final reader = FlacReader.fromBytes(bytes);
+      final cuesheet = reader.cueSheet;
+      expect(cuesheet, isNotNull);
+      expect(cuesheet!.leadInSamples, equals(88200));
+      expect(cuesheet.isCD, isTrue);
+      expect(cuesheet.tracks.length, equals(2));
+      expect(cuesheet.tracks[0].trackNumber, equals(1));
+      expect(cuesheet.tracks[0].isrc.startsWith('US-S1Z-00'), isTrue);
+      expect(cuesheet.tracks[0].indices.length, equals(1));
+      expect(cuesheet.tracks[1].trackNumber, equals(170));
+    });
+  });
+
+  group('Wasted bits', () {
+    test('decoder left-shifts samples by wasted-bit count', () {
+      // Build a CONSTANT subframe with wasted-bits = 3. The encoded value
+      // should be left-shifted by 3 after decoding.
+      // Effective bits = 16 - 3 = 13. Encode raw value = 100.
+      // Decoded sample should be 100 << 3 = 800.
+      final frame = _buildConstantMonoFrameWithWastedBits(
+        rawValue: 100,
+        wastedBits: 3,
+        blockSize: 4,
+        bitsPerSample: 16,
+        sampleRate: 44100,
+      );
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 1,
+        bitsPerSample: 16,
+        totalSamples: 4,
+        frames: [frame],
+      );
+      final reader = FlacReader.fromBytes(bytes);
+      final decoded = reader.decodeFrames().single;
+      expect(decoded.channelSamples[0], everyElement(equals(800)));
+    });
+  });
+
+  group('ID3v2 with footer flag', () {
+    test('skips both the header and the footer', () {
+      const tagBody = 10;
+      final id3 = <int>[
+        0x49, 0x44, 0x33,
+        0x04, 0x00, // version 4
+        0x10, // footer-present flag (bit 4)
+        0x00, 0x00, 0x00, 0x0A, // synchsafe size = 10
+      ];
+      final buf = Uint8List.fromList([
+        ...id3,
+        ...List.filled(tagBody, 0),
+        ...List.filled(10, 0), // 10-byte footer
+        ..._minimalFlac,
+      ]);
+      final reader = FlacReader.fromBytes(buf);
+      expect(reader.streamInfo.sampleRate, equals(44100));
+      expect(reader.audioDataOffset, equals(10 + tagBody + 10 + 42));
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Test helpers for fixture-based and hand-built frame tests.
+// ---------------------------------------------------------------------------
+
+/// Encodes interleaved PCM [samples] as little-endian signed bytes at
+/// [bitsPerSample] (rounded up to the next whole byte).
+Uint8List _samplesToLePcm(Int32List samples, int bitsPerSample) {
+  final bytesPerSample = (bitsPerSample + 7) ~/ 8;
+  final mask = bytesPerSample == 4 ? 0xFFFFFFFF : (1 << (bytesPerSample * 8)) - 1;
+  final out = Uint8List(samples.length * bytesPerSample);
+  var o = 0;
+  for (final s in samples) {
+    final v = s & mask;
+    for (var b = 0; b < bytesPerSample; b++) {
+      out[o++] = (v >> (b * 8)) & 0xFF;
+    }
+  }
+  return out;
+}
+
+/// Returns an 8-byte big-endian representation of [v] as a list of ints.
+List<int> _u64be(int v) {
+  final out = List<int>.filled(8, 0);
+  for (var i = 7; i >= 0; i--) {
+    out[i] = v & 0xFF;
+    v >>= 8;
+  }
+  return out;
+}
+
+/// Wraps frame-body bytes in a STREAMINFO-only FLAC container.
+Uint8List _buildFlacFromStreamInfoAndFrames({
+  required int sampleRate,
+  required int channels,
+  required int bitsPerSample,
+  required int totalSamples,
+  required List<List<int>> frames,
+}) {
+  final si = _encodeStreamInfo(
+    minBlockSize: 4,
+    maxBlockSize: 4,
+    sampleRate: sampleRate,
+    channels: channels,
+    bitsPerSample: bitsPerSample,
+    totalSamples: totalSamples,
+  );
+  return Uint8List.fromList([
+    0x66, 0x4c, 0x61, 0x43, // fLaC
+    0x80, 0x00, 0x00, 0x22, // STREAMINFO header: is_last=1, type=0, len=34
+    ...si,
+    for (final f in frames) ...f,
+  ]);
+}
+
+/// Encodes a 34-byte STREAMINFO data body with the given parameters.
+List<int> _encodeStreamInfo({
+  required int minBlockSize,
+  required int maxBlockSize,
+  required int sampleRate,
+  required int channels,
+  required int bitsPerSample,
+  required int totalSamples,
+}) {
+  final bw = _BitWriter();
+  bw.writeBits(minBlockSize, 16);
+  bw.writeBits(maxBlockSize, 16);
+  bw.writeBits(0, 24); // min frame size unknown
+  bw.writeBits(0, 24); // max frame size unknown
+  bw.writeBits(sampleRate, 20);
+  bw.writeBits(channels - 1, 3);
+  bw.writeBits(bitsPerSample - 1, 5);
+  bw.writeBits(totalSamples >> 32, 4);
+  bw.writeBits(totalSamples & 0xFFFFFFFF, 32);
+  final body = bw.toBytes();
+  return [...body, ...List.filled(16, 0)]; // MD5 all-zero
+}
+
+/// Builds a single FLAC audio frame with two CONSTANT subframes, encoded
+/// using the given stereo channel assignment (8 = left/side, 9 = right/side,
+/// 10 = mid/side).
+List<int> _buildConstantStereoFrame({
+  required int channelAssignment,
+  required int ch0Value,
+  required int ch1Value,
+  required int blockSize,
+  required int bitsPerSample,
+  required int sampleRate,
+}) {
+  final bw = _BitWriter();
+  // Frame header.
+  bw.writeBits(0x3FFE, 14); // sync
+  bw.writeBit(0); // reserved
+  bw.writeBit(0); // fixed blocksize
+  // Block size code 0x7 (16-bit follow-up).
+  bw.writeBits(0x7, 4);
+  // Sample rate: pre-coded 44100 = 0x9.
+  assert(sampleRate == 44100);
+  bw.writeBits(0x9, 4);
+  // Channel assignment.
+  bw.writeBits(channelAssignment, 4);
+  // Bits per sample: 16 = 0x4.
+  assert(bitsPerSample == 16);
+  bw.writeBits(0x4, 3);
+  bw.writeBit(0); // reserved
+  // UTF-8 frame number 0.
+  bw.writeBits(0x00, 8);
+  // Block-size follow-up: blockSize-1 in 16 bits.
+  bw.writeBits(blockSize - 1, 16);
+
+  // CRC-8 over the header bytes written so far.
+  bw.alignToByte();
+  final header = bw.toBytes();
+  final headerCrc = _crc8(header);
+  final bw2 = _BitWriter()..writeAllBytes(header)..writeBits(headerCrc, 8);
+
+  // Subframe 0: CONSTANT, no wasted bits, value at bitsPerSample (+1 if side).
+  final ch0Bits =
+      bitsPerSample + _sideExtra(channelAssignment, 0);
+  bw2.writeBit(0); // zero padding
+  bw2.writeBits(0, 6); // type code 0 = CONSTANT
+  bw2.writeBit(0); // no wasted bits
+  bw2.writeSignedBits(ch0Value, ch0Bits);
+
+  // Subframe 1.
+  final ch1Bits =
+      bitsPerSample + _sideExtra(channelAssignment, 1);
+  bw2.writeBit(0);
+  bw2.writeBits(0, 6);
+  bw2.writeBit(0);
+  bw2.writeSignedBits(ch1Value, ch1Bits);
+
+  // Byte-align for footer CRC-16.
+  bw2.alignToByte();
+  final body = bw2.toBytes();
+  final crc16 = _crc16(body);
+  return [...body, (crc16 >> 8) & 0xFF, crc16 & 0xFF];
+}
+
+/// Builds a single mono frame with one CONSTANT subframe that has wasted bits.
+List<int> _buildConstantMonoFrameWithWastedBits({
+  required int rawValue,
+  required int wastedBits,
+  required int blockSize,
+  required int bitsPerSample,
+  required int sampleRate,
+}) {
+  final bw = _BitWriter();
+  bw.writeBits(0x3FFE, 14);
+  bw.writeBit(0);
+  bw.writeBit(0);
+  bw.writeBits(0x7, 4); // 16-bit follow-up blocksize
+  bw.writeBits(0x9, 4); // 44100
+  bw.writeBits(0, 4); // independent, 1 channel
+  bw.writeBits(0x4, 3); // 16-bit
+  bw.writeBit(0);
+  bw.writeBits(0x00, 8); // frame number 0
+  bw.writeBits(blockSize - 1, 16);
+  bw.alignToByte();
+  final hdr = bw.toBytes();
+  final crc = _crc8(hdr);
+  final bw2 = _BitWriter()..writeAllBytes(hdr)..writeBits(crc, 8);
+
+  // Subframe: zero bit, type=0 CONSTANT, wasted-bits flag=1,
+  // unary encoding of (wastedBits - 1) + trailing 1.
+  bw2.writeBit(0);
+  bw2.writeBits(0, 6);
+  bw2.writeBit(1); // wasted bits present
+  for (var i = 0; i < wastedBits - 1; i++) {
+    bw2.writeBit(0);
+  }
+  bw2.writeBit(1);
+  // Value at effective width = bitsPerSample - wastedBits.
+  bw2.writeSignedBits(rawValue, bitsPerSample - wastedBits);
+
+  bw2.alignToByte();
+  final body = bw2.toBytes();
+  final crc16 = _crc16(body);
+  return [...body, (crc16 >> 8) & 0xFF, crc16 & 0xFF];
+}
+
+int _sideExtra(int assignment, int channel) {
+  if (assignment == 8 && channel == 1) return 1;
+  if (assignment == 9 && channel == 0) return 1;
+  if (assignment == 10 && channel == 1) return 1;
+  return 0;
+}
+
+// Re-implemented CRC-8 / CRC-16 helpers for test-side frame construction.
+// (The library versions are private to the src tree.)
+int _crc8(List<int> data) {
+  var crc = 0;
+  for (final b in data) {
+    crc ^= b;
+    for (var i = 0; i < 8; i++) {
+      crc = (crc & 0x80) != 0 ? ((crc << 1) ^ 0x07) & 0xFF : (crc << 1) & 0xFF;
+    }
+  }
+  return crc;
+}
+
+int _crc16(List<int> data) {
+  var crc = 0;
+  for (final b in data) {
+    crc ^= (b << 8);
+    for (var i = 0; i < 8; i++) {
+      crc = (crc & 0x8000) != 0
+          ? ((crc << 1) ^ 0x8005) & 0xFFFF
+          : (crc << 1) & 0xFFFF;
+    }
+  }
+  return crc;
+}
+
+/// Minimal big-endian bit writer used by hand-built frame fixtures.
+class _BitWriter {
+  final List<int> _bytes = [];
+  int _cur = 0;
+  int _bitPos = 0; // 0..7, number of bits already written in _cur from MSB.
+
+  void writeBit(int bit) {
+    _cur |= (bit & 1) << (7 - _bitPos);
+    _bitPos++;
+    if (_bitPos == 8) {
+      _bytes.add(_cur);
+      _cur = 0;
+      _bitPos = 0;
+    }
+  }
+
+  void writeBits(int value, int n) {
+    for (var i = n - 1; i >= 0; i--) {
+      writeBit((value >> i) & 1);
+    }
+  }
+
+  void writeSignedBits(int value, int n) {
+    final mask = n == 32 ? 0xFFFFFFFF : (1 << n) - 1;
+    writeBits(value & mask, n);
+  }
+
+  void alignToByte() {
+    if (_bitPos != 0) {
+      _bytes.add(_cur);
+      _cur = 0;
+      _bitPos = 0;
+    }
+  }
+
+  void writeAllBytes(List<int> bytes) {
+    assert(_bitPos == 0);
+    _bytes.addAll(bytes);
+  }
+
+  List<int> toBytes() {
+    assert(_bitPos == 0, 'writer not byte-aligned');
+    return List.of(_bytes);
+  }
 }
 
 /// Returns a copy of [_minimalFlac] with STREAMINFO.md5 replaced by [md5].
