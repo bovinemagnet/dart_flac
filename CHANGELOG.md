@@ -66,3 +66,11 @@ Initial release.
   CUESHEET offsets and lead-in samples) are exposed as `Int64` from
   `package:fixnum` so they keep full precision under `dart compile js`
   and Flutter web, where native `int` is limited to 2^53.
+
+### Benchmarks
+
+- `benchmark/decode_benchmark.dart` — subprocess-per-operation harness
+  that reports decode throughput and peak RSS for the three decode
+  shapes. Desktop baseline numbers documented in README: ~230×
+  realtime AOT on a 2024 laptop, with streaming (`pcmChunks`) using
+  ~7× less memory than the full-buffer path on a 3-minute track.

@@ -27,3 +27,7 @@ doc/api/
 
 .flutter-plugins
 .flutter-plugins-dependencies
+
+# Benchmark fixtures (generated, ~4-40MB)
+benchmark/fixtures/*.flac
+benchmark/fixtures/*.pcm
