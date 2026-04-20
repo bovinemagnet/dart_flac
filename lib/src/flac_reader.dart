@@ -143,20 +143,51 @@ class FlacReader {
       metadataBlocks.whereType<StreamInfoBlock>().first;
 
   /// The VORBIS_COMMENT block, or `null` if not present.
+  ///
+  /// The FLAC spec limits a stream to at most one VORBIS_COMMENT block, so
+  /// this singular getter is the right choice for well-formed files. For
+  /// the defensive case of a malformed file with more than one, see
+  /// [vorbisCommentsAll].
   VorbisCommentBlock? get vorbisComment =>
       metadataBlocks.whereType<VorbisCommentBlock>().firstOrNull;
 
+  /// Every VORBIS_COMMENT block present, in stream order.
+  ///
+  /// Spec-conformant files have at most one entry here; non-conformant
+  /// files (e.g. those edited by a broken tagger) may have multiple.
+  List<VorbisCommentBlock> get vorbisCommentsAll =>
+      metadataBlocks.whereType<VorbisCommentBlock>().toList();
+
   /// All PICTURE blocks in the file.
+  ///
+  /// FLAC legally permits multiple pictures per stream (front cover, back
+  /// cover, booklet pages, artist, etc. — see [PictureType]).
   List<PictureBlock> get pictures =>
       metadataBlocks.whereType<PictureBlock>().toList();
+
+  /// Alias for [pictures]. Provided for naming consistency with
+  /// [cueSheetsAll] and [vorbisCommentsAll].
+  List<PictureBlock> get picturesAll => pictures;
 
   /// The SEEKTABLE block, or `null` if not present.
   SeekTableBlock? get seekTable =>
       metadataBlocks.whereType<SeekTableBlock>().firstOrNull;
 
   /// The CUESHEET block, or `null` if not present.
+  ///
+  /// The FLAC spec limits a stream to at most one CUESHEET. For the
+  /// defensive case of multiple, see [cueSheetsAll].
   CueSheetBlock? get cueSheet =>
       metadataBlocks.whereType<CueSheetBlock>().firstOrNull;
+
+  /// Every CUESHEET block present, in stream order.
+  ///
+  /// Spec-conformant files have at most one entry here; real-world files
+  /// produced by certain CD rippers / tag editors occasionally emit more
+  /// than one. Use this getter if you need to inspect every cue sheet
+  /// rather than accept only the first.
+  List<CueSheetBlock> get cueSheetsAll =>
+      metadataBlocks.whereType<CueSheetBlock>().toList();
 
   /// All APPLICATION blocks in the file.
   List<ApplicationBlock> get applicationBlocks =>

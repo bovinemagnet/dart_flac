@@ -843,6 +843,56 @@ void main() {
     });
   });
 
+  group('Multiple metadata blocks per type', () {
+    test('picturesAll exposes every PICTURE block', () {
+      // Build a stream with two PICTURE blocks back-to-back.
+      final pic1 = _buildPictureBlockData(PictureType.coverFront,
+          'image/jpeg', Uint8List.fromList([0x11]));
+      final pic2 = _buildPictureBlockData(PictureType.coverBack,
+          'image/png', Uint8List.fromList([0x22]));
+
+      final si = _buildStreamInfoBytes();
+      final bytes = Uint8List.fromList([
+        0x66, 0x4c, 0x61, 0x43, // fLaC
+        0x00, 0x00, 0x00, 0x22, ...si, // STREAMINFO (not last)
+        0x06, (pic1.length >> 16) & 0xFF, (pic1.length >> 8) & 0xFF,
+        pic1.length & 0xFF, ...pic1, // PICTURE #1 (not last)
+        0x86, (pic2.length >> 16) & 0xFF, (pic2.length >> 8) & 0xFF,
+        pic2.length & 0xFF, ...pic2, // PICTURE #2 (is last)
+      ]);
+
+      final reader = FlacReader.fromBytes(bytes);
+      expect(reader.pictures.length, equals(2));
+      expect(reader.picturesAll.length, equals(2));
+      expect(reader.pictures[0].pictureType,
+          equals(PictureType.coverFront));
+      expect(reader.pictures[1].pictureType,
+          equals(PictureType.coverBack));
+    });
+
+    test('cueSheetsAll returns every CUESHEET; cueSheet returns the first',
+        () {
+      final cs1 = _buildMinimalCueSheetData(leadIn: 1000);
+      final cs2 = _buildMinimalCueSheetData(leadIn: 2000);
+
+      final si = _buildStreamInfoBytes();
+      final bytes = Uint8List.fromList([
+        0x66, 0x4c, 0x61, 0x43,
+        0x00, 0x00, 0x00, 0x22, ...si,
+        0x05, (cs1.length >> 16) & 0xFF, (cs1.length >> 8) & 0xFF,
+        cs1.length & 0xFF, ...cs1, // CUESHEET #1 (not last)
+        0x85, (cs2.length >> 16) & 0xFF, (cs2.length >> 8) & 0xFF,
+        cs2.length & 0xFF, ...cs2, // CUESHEET #2 (is last)
+      ]);
+
+      final reader = FlacReader.fromBytes(bytes);
+      expect(reader.cueSheetsAll.length, equals(2));
+      expect(reader.cueSheet!.leadInSamples.toInt(), equals(1000),
+          reason: 'singular getter returns first match');
+      expect(reader.cueSheetsAll[1].leadInSamples.toInt(), equals(2000));
+    });
+  });
+
   group('ID3v2 with footer flag', () {
     test('skips both the header and the footer', () {
       const tagBody = 10;
@@ -1371,6 +1421,52 @@ class _BitWriter {
     assert(_bitPos == 0, 'writer not byte-aligned');
     return List.of(_bytes);
   }
+}
+
+/// Builds the body of a minimal PICTURE metadata block with one-byte image
+/// data. Used to construct files with multiple pictures in tests.
+List<int> _buildPictureBlockData(
+    int pictureType, String mime, Uint8List imageData) {
+  final mimeBytes = mime.codeUnits;
+  final result = <int>[];
+  // picture type (32-bit BE)
+  result.addAll([0, 0, 0, pictureType]);
+  // MIME length + bytes
+  result.addAll([0, 0, 0, mimeBytes.length]);
+  result.addAll(mimeBytes);
+  // description length + bytes (empty)
+  result.addAll([0, 0, 0, 0]);
+  // width, height, color depth, colors used (all 0)
+  result.addAll(List.filled(16, 0));
+  // image data length + bytes
+  result.addAll([
+    0,
+    0,
+    (imageData.length >> 8) & 0xFF,
+    imageData.length & 0xFF,
+  ]);
+  result.addAll(imageData);
+  return result;
+}
+
+/// Builds a minimal CUESHEET block body (catalog, lead-in, is-CD, one
+/// lead-out track, no indices) for tests that need multiple CUESHEETs.
+List<int> _buildMinimalCueSheetData({required int leadIn}) {
+  final result = <int>[];
+  result.addAll(List.filled(128, 0)); // media catalog (all NUL)
+  result.addAll(_u64be(leadIn)); // lead-in samples
+  result.add(0x80); // is-CD flag
+  result.addAll(List.filled(258, 0)); // reserved
+  result.add(1); // 1 track
+  // Lead-out track: offset=0, num=170, ISRC=12 NULs, flags=0, reserved=13,
+  // no indices.
+  result.addAll(_u64be(0));
+  result.add(170);
+  result.addAll(List.filled(12, 0));
+  result.add(0);
+  result.addAll(List.filled(13, 0));
+  result.add(0);
+  return result;
 }
 
 /// Returns a copy of [_minimalFlac] with STREAMINFO.md5 replaced by [md5].

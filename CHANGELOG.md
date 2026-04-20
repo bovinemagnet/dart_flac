@@ -22,6 +22,17 @@ Initial release.
 - CRC-8 (frame header) and CRC-16 (frame footer) validation.
 - Wasted-bits-per-sample handling.
 
+### Multi-valued metadata accessors
+
+- `FlacReader.picturesAll` (alias of `pictures`) — every PICTURE block
+  in the stream. FLAC legally permits multiple pictures (front/back
+  cover, booklet, artist).
+- `FlacReader.cueSheetsAll` — every CUESHEET block. The spec limits
+  this to at most one, but real-world files occasionally contain more;
+  the singular `cueSheet` still returns the first match.
+- `FlacReader.vorbisCommentsAll` — every VORBIS_COMMENT block, with
+  the singular `vorbisComment` kept for the common case.
+
 ### Reader APIs
 
 - `FlacReader.fromFile()` / `fromFileSync()` / `fromBytes()`.
