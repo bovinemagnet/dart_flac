@@ -664,6 +664,110 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  // CLI subprocess tests: invoke `dart run bin/flac2wav.dart` and verify
+  // end-to-end behaviour. These catch bugs that unit-testing the helpers in
+  // isolation cannot — header/payload size mismatches in the streaming path,
+  // bypassed argument validation, partial files left behind on error.
+  // -------------------------------------------------------------------------
+  group('flac2wav CLI', () {
+    late Directory tmp;
+
+    setUp(() async {
+      tmp = await Directory.systemTemp.createTemp('flac2wav_cli_');
+    });
+
+    tearDown(() async {
+      if (await tmp.exists()) await tmp.delete(recursive: true);
+    });
+
+    test('streaming output matches writeWavBytes byte-for-byte', () async {
+      const inputPath = 'test/fixtures/stereo_16_44100.flac';
+      final outputPath = '${tmp.path}/out.wav';
+
+      final result = await Process.run(
+        Platform.resolvedExecutable,
+        ['run', 'bin/flac2wav.dart', inputPath, outputPath],
+      );
+      expect(result.exitCode, equals(0),
+          reason: 'stderr: ${result.stderr}\nstdout: ${result.stdout}');
+      final actual = await File(outputPath).readAsBytes();
+
+      final reader = await FlacReader.fromFile(inputPath);
+      final info = reader.streamInfo;
+      final expected = writeWavBytes(
+        frames: reader.decodeFrames(),
+        sampleRate: info.sampleRate,
+        channels: info.channels,
+        bitsPerSample: info.bitsPerSample,
+      );
+      expect(actual, equals(expected));
+    });
+
+    test('rejects --bits 17 without overwriting output', () async {
+      const inputPath = 'test/fixtures/stereo_16_44100.flac';
+      final outputPath = '${tmp.path}/out.wav';
+      final sentinel = Uint8List.fromList([0xDE, 0xAD, 0xBE, 0xEF]);
+      await File(outputPath).writeAsBytes(sentinel);
+
+      final result = await Process.run(
+        Platform.resolvedExecutable,
+        ['run', 'bin/flac2wav.dart', '--bits', '17', inputPath, outputPath],
+      );
+      expect(result.exitCode, isNot(equals(0)));
+      final after = await File(outputPath).readAsBytes();
+      expect(after, equals(sentinel),
+          reason: 'output file was overwritten despite invalid --bits');
+    });
+
+    test('--bits without value exits non-zero', () async {
+      const inputPath = 'test/fixtures/stereo_16_44100.flac';
+      final outputPath = '${tmp.path}/out.wav';
+      final result = await Process.run(
+        Platform.resolvedExecutable,
+        ['run', 'bin/flac2wav.dart', inputPath, outputPath, '--bits'],
+      );
+      expect(result.exitCode, isNot(equals(0)));
+      expect(await File(outputPath).exists(), isFalse,
+          reason: 'output file was created despite missing --bits value');
+    });
+
+    test('mid-stream decode error leaves pre-existing output untouched',
+        () async {
+      // Corrupt frame 1's CRC-8 (byte 63 of _minimalFlac). Frame 0 still
+      // decodes cleanly, so the streaming path writes the header + frame
+      // 0's PCM into the temp file before the second frame parse throws.
+      final corrupted = Uint8List.fromList(_minimalFlac);
+      corrupted[63] = 0x00;
+      final inputPath = '${tmp.path}/bad.flac';
+      final outputPath = '${tmp.path}/out.wav';
+      await File(inputPath).writeAsBytes(corrupted);
+
+      final sentinel = Uint8List.fromList([0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE]);
+      await File(outputPath).writeAsBytes(sentinel);
+
+      final result = await Process.run(
+        Platform.resolvedExecutable,
+        ['run', 'bin/flac2wav.dart', inputPath, outputPath],
+      );
+      expect(result.exitCode, isNot(equals(0)),
+          reason: 'stderr: ${result.stderr}\nstdout: ${result.stdout}');
+
+      final after = await File(outputPath).readAsBytes();
+      expect(after, equals(sentinel),
+          reason: 'pre-existing output was destroyed by a failed decode');
+
+      // No sibling temp file (`out.wav.flac2wav.<pid>.<micros>.tmp`)
+      // should survive the failure.
+      final leftovers = Directory(tmp.path)
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.contains('.flac2wav.'))
+          .toList();
+      expect(leftovers, isEmpty, reason: 'temp files were left behind');
+    });
+  }, timeout: Timeout(Duration(minutes: 2)));
+
+  // -------------------------------------------------------------------------
   // End-to-end decode tests using real .flac fixtures produced by the
   // reference `flac` CLI. These exercise LPC, FIXED, Rice, joint-stereo
   // decorrelation, pre-coded sample-rate/block-size/bps codes, and MD5
