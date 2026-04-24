@@ -18,7 +18,10 @@ jobs:
       - name: Set up Dart
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          # Pin to a concrete SDK so a future Dart release tightening
+          # `dart format` or `dart analyze` lints cannot turn a green
+          # commit red. Bump deliberately when upgrading the floor.
+          sdk: 3.11.5
 
       - name: Install dependencies
         run: dart pub get
@@ -29,8 +32,20 @@ jobs:
       - name: Analyze
         run: dart analyze
 
-      - name: Test on VM
-        run: dart test
+      - name: Test on VM with coverage
+        run: ./tool/coverage.sh
+
+      - name: Upload coverage (LCOV)
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          if-no-files-found: error
+
+      - name: Install Chrome
+        # Explicit install so the browser smoke test does not depend on
+        # the GitHub-hosted runner image shipping Chrome by default.
+        uses: browser-actions/setup-chrome@v1
 
       - name: Test in Chrome
         run: dart test -p chrome test/web_smoke_test.dart

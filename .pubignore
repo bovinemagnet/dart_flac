@@ -18,8 +18,11 @@ doc/api/
 # Coverage reports
 coverage/
 
-# Repository maintenance scripts
-tool/create_github_issues.sh
+# Repository maintenance scripts, coverage helpers, benchmark harness
+tool/
+
+# Test sources and binary fixtures — not needed by library consumers
+test/
 
 # dotenv
 .env*
