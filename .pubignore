@@ -1,0 +1,33 @@
+# pub publish exclusions. When this file exists, pub uses it instead of
+# .gitignore, so publish-relevant .gitignore patterns are duplicated here.
+
+# AI assistant / repo-local docs that don't belong on pub.dev
+CLAUDE.md
+
+# Pub / Dart toolchain artefacts
+.dart_tool/
+.packages
+build/
+pubspec.lock
+
+# Generated dartdoc
+doc/api/
+
+# dotenv
+.env*
+
+# dart2js outputs
+*.dart.js
+*.info.json
+*.js
+*.js_
+*.js.deps
+*.js.map
+
+# Flutter plugin registration artefacts
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Generated benchmark fixtures (4-40 MB each)
+benchmark/fixtures/*.flac
+benchmark/fixtures/*.pcm
