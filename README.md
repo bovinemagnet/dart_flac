@@ -220,6 +220,27 @@ In either case the timing code and the memory probe
 for a more accurate Android-PSS reading) are the same as the desktop
 harness.
 
+### Community device results
+
+Real-device numbers contributed by users. Each cell is
+`× realtime / peak memory (MB)` for a 3-minute stereo 16-bit 44100 Hz
+fixture. Open a PR adding your row if your hardware isn't listed — use
+`benchmark/format_community_row.dart` to produce a row in the canonical
+format so cells line up with the ones below.
+
+| Device / CPU           | OS / Dart            | Mode | `decodeInterleavedSamples` | `pcmChunks` | `decodeFlacFileToPcm` |
+|------------------------|----------------------|------|----------------------------|-------------|-----------------------|
+| _(no submissions yet)_ |                      |      |                            |             |                       |
+
+How to contribute a row:
+
+1. Run the benchmark on your device — either the desktop CLI
+   (`dart run benchmark/decode_benchmark.dart`) or the Flutter
+   integration-test harness sketched above.
+2. Feed the medians into `formatCommunityRow(...)` from
+   `benchmark/format_community_row.dart` and print the result.
+3. Paste the printed line into the table above and open a PR.
+
 ## Non-goals
 
 - **Audio playback.** This library emits PCM; it does not drive a

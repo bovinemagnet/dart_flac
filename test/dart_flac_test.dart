@@ -893,6 +893,79 @@ void main() {
     });
   });
 
+  group('Picture accessors', () {
+    Uint8List buildFlacWithPictures(List<List<int>> pictureBodies) {
+      final si = _buildStreamInfoBytes();
+      final out = <int>[
+        0x66, 0x4c, 0x61, 0x43,
+        0x00, 0x00, 0x00, 0x22, ...si, // STREAMINFO (not last)
+      ];
+      for (var i = 0; i < pictureBodies.length; i++) {
+        final body = pictureBodies[i];
+        final isLast = i == pictureBodies.length - 1;
+        final header = isLast ? 0x86 : 0x06;
+        out.addAll([
+          header,
+          (body.length >> 16) & 0xFF,
+          (body.length >> 8) & 0xFF,
+          body.length & 0xFF,
+          ...body,
+        ]);
+      }
+      return Uint8List.fromList(out);
+    }
+
+    test('frontCoverPicture returns the front-cover block', () {
+      final front = _buildPictureBlockData(
+          PictureType.coverFront, 'image/jpeg', Uint8List.fromList([0xAA]));
+      final bytes = buildFlacWithPictures([front]);
+      final reader = FlacReader.fromBytes(bytes);
+
+      expect(reader.frontCoverPicture, isNotNull);
+      expect(reader.frontCoverPicture!.pictureType,
+          equals(PictureType.coverFront));
+      expect(reader.frontCoverPicture!.pictureData, equals([0xAA]));
+      expect(reader.backCoverPicture, isNull);
+      expect(reader.pictureByType(PictureType.leadArtist), isNull);
+    });
+
+    test('backCoverPicture returns the back-cover block', () {
+      final front = _buildPictureBlockData(
+          PictureType.coverFront, 'image/jpeg', Uint8List.fromList([0x01]));
+      final back = _buildPictureBlockData(
+          PictureType.coverBack, 'image/png', Uint8List.fromList([0x02]));
+      final leaflet = _buildPictureBlockData(
+          PictureType.leafletPage, 'image/jpeg', Uint8List.fromList([0x03]));
+      final bytes = buildFlacWithPictures([front, back, leaflet]);
+      final reader = FlacReader.fromBytes(bytes);
+
+      expect(reader.frontCoverPicture!.pictureData, equals([0x01]));
+      expect(reader.backCoverPicture!.pictureData, equals([0x02]));
+      expect(reader.pictureByType(PictureType.leafletPage)!.pictureData,
+          equals([0x03]));
+      expect(reader.pictureByType(PictureType.illustration), isNull);
+    });
+
+    test('all picture accessors return null when no PICTURE blocks', () {
+      final reader = FlacReader.fromBytes(_minimalFlac);
+      expect(reader.frontCoverPicture, isNull);
+      expect(reader.backCoverPicture, isNull);
+      expect(reader.pictureByType(PictureType.coverFront), isNull);
+      expect(reader.pictureByType(42), isNull);
+    });
+
+    test('pictureByType finds a non-cover picture type', () {
+      final illustration = _buildPictureBlockData(
+          PictureType.illustration, 'image/png', Uint8List.fromList([0xF0]));
+      final bytes = buildFlacWithPictures([illustration]);
+      final reader = FlacReader.fromBytes(bytes);
+
+      expect(reader.pictureByType(PictureType.illustration)!.pictureData,
+          equals([0xF0]));
+      expect(reader.frontCoverPicture, isNull);
+    });
+  });
+
   group('ID3v2 with footer flag', () {
     test('skips both the header and the footer', () {
       const tagBody = 10;

@@ -170,6 +170,24 @@ class FlacReader {
   /// [cueSheetsAll] and [vorbisCommentsAll].
   List<PictureBlock> get picturesAll => pictures;
 
+  /// The first picture whose [PictureBlock.pictureType] equals [type],
+  /// or `null` if no such picture exists.
+  ///
+  /// Picture type codes are listed in [PictureType] (e.g.
+  /// [PictureType.coverFront], [PictureType.leadArtist]). If a file
+  /// legally contains more than one picture of the same type, use
+  /// [pictures] to enumerate them.
+  PictureBlock? pictureByType(int type) =>
+      pictures.where((p) => p.pictureType == type).firstOrNull;
+
+  /// The front-cover picture ([PictureType.coverFront]), or `null` if
+  /// none is present. Convenience wrapper around [pictureByType].
+  PictureBlock? get frontCoverPicture => pictureByType(PictureType.coverFront);
+
+  /// The back-cover picture ([PictureType.coverBack]), or `null` if
+  /// none is present. Convenience wrapper around [pictureByType].
+  PictureBlock? get backCoverPicture => pictureByType(PictureType.coverBack);
+
   /// The SEEKTABLE block, or `null` if not present.
   SeekTableBlock? get seekTable =>
       metadataBlocks.whereType<SeekTableBlock>().firstOrNull;

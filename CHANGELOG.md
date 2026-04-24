@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.0.2 — 2026-04-24
+
+- Add `FlacReader.frontCoverPicture`, `backCoverPicture`, and
+  `pictureByType(int)` convenience accessors for the common picture
+  lookups. `pictureByType` takes a `PictureType` int code and returns
+  the first matching block, or `null`.
+- Add a browser smoke test (`test/web_smoke_test.dart`, `@TestOn('browser')`)
+  that exercises `decodeFlacBytesToPcm` under `dart2js`. Run with
+  `dart test -p chrome`.
+- README: new "Community device results" section with an empty
+  submission table and a recipe for contributing real-device benchmark
+  numbers. `benchmark/format_community_row.dart` provides a canonical
+  row formatter that submitters can copy into a Flutter integration
+  test.
+
 ## 0.0.1
 
 Initial release.
