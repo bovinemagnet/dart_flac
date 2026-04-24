@@ -1,15 +1,27 @@
 # Changelog
 
-## Unreleased
+## 0.0.3 — 2026-04-25
 
 - Add GitHub Actions CI for formatting, analysis, VM tests, browser smoke
   tests, and `dart pub publish --dry-run`.
-- Add streaming WAV header/chunk helpers and make `flac2wav` write PCM
-  incrementally for streams with known total samples.
+- Add streaming WAV header/chunk helpers (`writeWavHeaderBytes`,
+  `frameToWavPcmBytes`) and make `flac2wav` write PCM incrementally for
+  streams with known total samples.
 - Add CLI flags for output bit depth, start sample, duration, and explicit
   MD5 verification control.
+- `flac2wav` now halts immediately on invalid arguments instead of
+  falling through to decode, so a bad `--bits` value can no longer
+  silently overwrite a valid output file with a partial decode.
+- `flac2wav` writes atomically: output goes to a sibling temp file that
+  is renamed over the destination on success. On a mid-decode failure
+  the temp is deleted and any pre-existing file at the destination is
+  left untouched. The streaming path also patches the RIFF/data chunk
+  sizes at close, so the header is honest about the bytes actually
+  written (truncated inputs, short tail frames, etc.).
 - Add coverage tooling and benchmark JSON/baseline comparison support.
-- Add malformed-input and WAV helper tests.
+- Add malformed-input and WAV helper tests, plus CLI subprocess tests
+  covering streaming/bytes equivalence, validation halting, and
+  pre-existing output survival across decode errors.
 
 ## 0.0.2 — 2026-04-24
 
