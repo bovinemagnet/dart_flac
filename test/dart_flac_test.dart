@@ -580,6 +580,89 @@ void main() {
     });
   });
 
+  group('Lazy frame seeking', () {
+    test('framesLazyFromSample starts at containing frame', () {
+      final reader = FlacReader.fromBytes(_minimalFlac);
+      final frames = reader.framesLazyFromSample(4).toList();
+      expect(frames.length, equals(1));
+      expect(frames.single.channelSamples[0], everyElement(equals(0)));
+    });
+  });
+
+  group('Malformed input corpus', () {
+    test('rejects truncated metadata header', () {
+      final bytes = Uint8List.fromList([0x66, 0x4c, 0x61, 0x43, 0x80]);
+      expect(() => FlacReader.fromBytes(bytes), throwsFormatException);
+    });
+
+    test('rejects metadata block length beyond end of file', () {
+      final bytes = Uint8List.fromList([
+        0x66, 0x4c, 0x61, 0x43, // fLaC
+        0x80, 0x00, 0x00, 0x22, // STREAMINFO claims 34 bytes
+        0x00, 0x01,
+      ]);
+      expect(() => FlacReader.fromBytes(bytes), throwsFormatException);
+    });
+
+    test('rejects malformed SEEKTABLE length', () {
+      final bytes = _buildFlacWithBlock(
+          BlockType.seekTable, true, Uint8List.fromList([0x00]));
+      expect(() => FlacReader.fromBytes(bytes), throwsFormatException);
+    });
+
+    test('parses ID3v2 tag that declares a footer', () {
+      final bytes = Uint8List.fromList([
+        0x49, 0x44, 0x33, // "ID3"
+        0x04, 0x00,
+        0x10, // footer-present flag
+        0x00, 0x00, 0x00, 0x00, // empty tag body
+        ...List.filled(10, 0), // footer
+        ..._minimalFlac,
+      ]);
+      final reader = FlacReader.fromBytes(bytes);
+      expect(reader.streamInfo.sampleRate, equals(44100));
+      expect(reader.audioDataOffset, equals(20 + 42));
+    });
+  });
+
+  group('WAV streaming helpers', () {
+    test('writeWavHeaderBytes writes a PCM data length', () {
+      final header = writeWavHeaderBytes(
+        dataSize: 6,
+        sampleRate: 44100,
+        channels: 2,
+        bitsPerSample: 16,
+      );
+      expect(header.length, equals(44));
+      expect(String.fromCharCodes(header.sublist(0, 4)), equals('RIFF'));
+      expect(String.fromCharCodes(header.sublist(36, 40)), equals('data'));
+      expect(header[40], equals(6));
+    });
+
+    test('frameToWavPcmBytes biases 8-bit samples and can trim', () {
+      final frame = FlacFrame(
+        header: const FrameHeader(
+          blockingStrategy: BlockingStrategy.fixedBlocksize,
+          blockSize: 3,
+          sampleRate: 44100,
+          channelAssignment: ChannelAssignment.independent,
+          channelCount: 1,
+          bitsPerSample: 8,
+          number: 0,
+        ),
+        channelSamples: [
+          Int32List.fromList([-128, 0, 127])
+        ],
+      );
+
+      expect(frameToWavPcmBytes(frame, 8), equals([0, 128, 255]));
+      expect(
+        frameToWavPcmBytes(frame, 8, skipSamples: 1, takeSamples: 1),
+        equals([128]),
+      );
+    });
+  });
+
   // -------------------------------------------------------------------------
   // End-to-end decode tests using real .flac fixtures produced by the
   // reference `flac` CLI. These exercise LPC, FIXED, Rice, joint-stereo

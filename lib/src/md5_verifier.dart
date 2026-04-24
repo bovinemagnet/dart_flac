@@ -12,10 +12,24 @@ import 'pcm_output.dart';
 /// samples, each written as a little-endian signed integer at a byte-aligned
 /// width determined by [bitsPerSample] (rounded up to the next multiple of 8).
 /// Channels are interleaved per inter-channel sample.
-Uint8List computePcmMd5(List<FlacFrame> frames, int bitsPerSample) {
-  final builder = BytesBuilder(copy: false);
+Uint8List computePcmMd5(Iterable<FlacFrame> frames, int bitsPerSample) {
+  final digestSink = _DigestSink();
+  final sink = md5.startChunkedConversion(digestSink);
   for (final frame in frames) {
-    builder.add(frameToInterleavedPcm(frame, bitsPerSample));
+    sink.add(frameToInterleavedPcm(frame, bitsPerSample));
   }
-  return Uint8List.fromList(md5.convert(builder.takeBytes()).bytes);
+  sink.close();
+  return Uint8List.fromList(digestSink.digest!.bytes);
+}
+
+class _DigestSink implements Sink<Digest> {
+  Digest? digest;
+
+  @override
+  void add(Digest data) {
+    digest = data;
+  }
+
+  @override
+  void close() {}
 }

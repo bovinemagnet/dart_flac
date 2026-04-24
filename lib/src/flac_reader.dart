@@ -41,7 +41,7 @@ const _flacMarker = [0x66, 0x4C, 0x61, 0x43]; // "fLaC"
 /// final pcm = await Isolate.run(() => decodeFlacFileToPcm('track.flac'));
 /// ```
 ///
-/// [outputBitsPerSample] defaults to 16 — the width almost every audio
+/// [outputBitsPerSample] defaults to 16, the width almost every audio
 /// sink (`flutter_sound`, Web Audio API, etc.) accepts without extra
 /// conversion. Pass the stream's native depth (or any of 8/16/24/32) to
 /// preserve full resolution.
@@ -80,14 +80,16 @@ Uint8List _readerToPcm(FlacReader reader, int outputBitsPerSample) {
 /// Reads a FLAC file from disk (or from a [Uint8List] byte buffer), parses
 /// its metadata blocks, and optionally decodes the audio frames.
 ///
-/// ### Example – read metadata only:
+/// Example: read metadata only.
+///
 /// ```dart
 /// final reader = await FlacReader.fromFile('track.flac');
 /// print(reader.streamInfo);
 /// print(reader.vorbisComment?.title);
 /// ```
 ///
-/// ### Example – decode audio:
+/// Example: decode audio.
+///
 /// ```dart
 /// final reader = await FlacReader.fromFile('track.flac');
 /// final frames = reader.decodeFrames();
@@ -292,6 +294,29 @@ class FlacReader {
     }
   }
 
+  /// Returns a lazy iterable over frames starting with the frame that
+  /// contains [sampleNumber].
+  ///
+  /// The first yielded frame may begin before [sampleNumber]. Use
+  /// [byteOffsetForSample] when you need only the byte position, or trim
+  /// the first frame if you need sample-exact output.
+  Iterable<FlacFrame> framesLazyFromSample(int sampleNumber) sync* {
+    final startOffset = byteOffsetForSample(sampleNumber);
+    final info = streamInfo;
+    final parser = FrameParser(
+      data: _data,
+      sampleRateFromStreamInfo: info.sampleRate,
+      bitsPerSampleFromStreamInfo: info.bitsPerSample,
+    );
+    var offset = startOffset;
+    while (offset + 2 <= _data.length) {
+      if (_data[offset] != 0xFF || (_data[offset + 1] & 0xFC) != 0xF8) break;
+      final (frame, nextOffset) = parser.parseFrame(offset);
+      yield frame;
+      offset = nextOffset;
+    }
+  }
+
   /// Verifies that re-decoding the audio produces PCM whose MD5 matches
   /// the signature stored in STREAMINFO.
   ///
@@ -302,8 +327,7 @@ class FlacReader {
     if (info.md5.every((b) => b == 0)) {
       return Md5VerificationResult.notComputed;
     }
-    final frames = decodeFrames();
-    final computed = computePcmMd5(frames, info.bitsPerSample);
+    final computed = computePcmMd5(framesLazy(), info.bitsPerSample);
     for (var i = 0; i < 16; i++) {
       if (computed[i] != info.md5[i]) return Md5VerificationResult.mismatch;
     }

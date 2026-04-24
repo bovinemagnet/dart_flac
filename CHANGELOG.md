@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Add GitHub Actions CI for formatting, analysis, VM tests, browser smoke
+  tests, and `dart pub publish --dry-run`.
+- Add streaming WAV header/chunk helpers and make `flac2wav` write PCM
+  incrementally for streams with known total samples.
+- Add CLI flags for output bit depth, start sample, duration, and explicit
+  MD5 verification control.
+- Add coverage tooling and benchmark JSON/baseline comparison support.
+- Add malformed-input and WAV helper tests.
+
 ## 0.0.2 — 2026-04-24
 
 - Add `FlacReader.frontCoverPicture`, `backCoverPicture`, and

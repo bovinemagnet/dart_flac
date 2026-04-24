@@ -1,7 +1,9 @@
-/// A Dart implementation of the FLAC (Free Lossless Audio Codec) library.
+/// Pure-Dart FLAC decoding and metadata parsing.
 ///
-/// Provides functionality for reading and decoding FLAC audio files,
-/// including metadata parsing and audio frame decoding.
+/// Import this library when you need to read FLAC metadata, decode frames,
+/// stream little-endian PCM chunks, verify STREAMINFO MD5 signatures, or write
+/// decoded samples to a WAV byte stream. The package has no native bindings and
+/// works on the Dart VM, Flutter, AOT, and web when bytes are supplied directly.
 library;
 
 export 'src/flac_reader.dart'
@@ -12,7 +14,8 @@ export 'src/flac_reader.dart'
         decodeFlacFileToPcm;
 export 'src/pcm_output.dart' show frameToInterleavedPcm;
 export 'src/streaming_decoder.dart' show StreamingFlacDecoder;
-export 'src/wav_writer.dart' show writeWavBytes;
+export 'src/wav_writer.dart'
+    show frameToWavPcmBytes, writeWavBytes, writeWavHeaderBytes;
 export 'src/metadata/metadata_block.dart';
 export 'src/metadata/stream_info.dart';
 export 'src/metadata/padding.dart';

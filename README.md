@@ -141,6 +141,40 @@ dart run dart_flac:flac2wav --verify track.flac track.wav
 See [`example/`](example/) for runnable programs covering the full API
 surface.
 
+## Development
+
+Common checks:
+
+```sh
+dart pub get
+dart format --set-exit-if-changed .
+dart analyze
+dart test
+dart test -p chrome test/web_smoke_test.dart
+dart pub publish --dry-run
+```
+
+Coverage report:
+
+```sh
+./tool/coverage.sh
+```
+
+The report is written to `coverage/lcov.info`. The script uses
+`package:coverage`, which is listed as a dev dependency.
+
+Conformance fixtures live in `test/fixtures/` and are generated from
+known PCM input with the reference `flac` CLI:
+
+```sh
+./test/fixtures/generate.sh
+```
+
+Regenerate fixtures when adding coverage for new bit depths, sample
+rates, channel layouts, or malformed stream behavior. Keep small parser
+edge cases inline in tests so the byte layout stays visible next to the
+assertions.
+
 ## Platforms
 
 Pure Dart, no FFI, no conditional compilation. Runs on the Dart VM
@@ -168,6 +202,19 @@ clean high-water mark. Fixture is a reproducible 3-minute stereo 16-bit
 `benchmark/generate_fixture.sh 180`) — the noise defeats the
 CONSTANT-subframe fast path and forces the encoder to pick LPC, which
 is the hot path in real-world music.
+
+Machine-readable benchmark output and baseline comparison are available:
+
+```sh
+dart run benchmark/decode_benchmark.dart \
+  --json-out benchmark/latest.json \
+  benchmark/fixtures/bench.flac
+
+dart run benchmark/decode_benchmark.dart \
+  --baseline benchmark/latest.json \
+  --max-regression-percent 15 \
+  benchmark/fixtures/bench.flac
+```
 
 ### Desktop baseline (AOT)
 

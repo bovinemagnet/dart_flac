@@ -2,7 +2,9 @@
 # .gitignore, so publish-relevant .gitignore patterns are duplicated here.
 
 # AI assistant / repo-local docs that don't belong on pub.dev
+AGENTS.md
 CLAUDE.md
+.github/
 
 # Pub / Dart toolchain artefacts
 .dart_tool/
@@ -12,6 +14,12 @@ pubspec.lock
 
 # Generated dartdoc
 doc/api/
+
+# Coverage reports
+coverage/
+
+# Repository maintenance scripts
+tool/create_github_issues.sh
 
 # dotenv
 .env*

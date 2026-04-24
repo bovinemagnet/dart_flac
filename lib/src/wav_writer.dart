@@ -17,24 +17,40 @@ Uint8List writeWavBytes({
   required int bitsPerSample,
 }) {
   final outBps = ((bitsPerSample + 7) ~/ 8) * 8;
-  final bytesPerSample = outBps ~/ 8;
-
   final frameList = frames is List<FlacFrame> ? frames : frames.toList();
   final builder = BytesBuilder(copy: false);
   for (final f in frameList) {
-    builder.add(frameToInterleavedPcm(f, outBps));
+    builder.add(frameToWavPcmBytes(f, outBps));
   }
-  final signedPcm = builder.takeBytes();
-
-  // 8-bit WAV is unsigned (bias of 128).
-  final pcm = outBps == 8
-      ? Uint8List.fromList(
-          signedPcm.map((b) => (b.toSigned(8) + 128) & 0xFF).toList())
-      : signedPcm;
+  final pcm = builder.takeBytes();
 
   final dataSize = pcm.length;
+  final header = writeWavHeaderBytes(
+    dataSize: dataSize,
+    sampleRate: sampleRate,
+    channels: channels,
+    bitsPerSample: outBps,
+  );
+  final out = Uint8List(header.length + dataSize);
+  out.setRange(0, header.length, header);
+  out.setRange(header.length, header.length + dataSize, pcm);
+  return out;
+}
+
+/// Returns a 44-byte RIFF/WAVE PCM header for a following PCM payload.
+///
+/// Use this with [frameToWavPcmBytes] when writing a WAV file incrementally.
+/// [dataSize] is the number of PCM payload bytes that will follow.
+Uint8List writeWavHeaderBytes({
+  required int dataSize,
+  required int sampleRate,
+  required int channels,
+  required int bitsPerSample,
+}) {
+  final outBps = ((bitsPerSample + 7) ~/ 8) * 8;
+  final bytesPerSample = outBps ~/ 8;
   const headerSize = 44;
-  final out = Uint8List(headerSize + dataSize);
+  final out = Uint8List(headerSize);
   final bd = ByteData.sublistView(out);
 
   _writeAscii(out, 0, 'RIFF');
@@ -53,8 +69,44 @@ Uint8List writeWavBytes({
   _writeAscii(out, 36, 'data');
   bd.setUint32(40, dataSize, Endian.little);
 
-  out.setRange(headerSize, headerSize + dataSize, pcm);
   return out;
+}
+
+/// Converts [frame] to WAV-compatible PCM bytes.
+///
+/// FLAC samples are emitted as signed PCM. WAV stores 8-bit PCM as unsigned,
+/// so this helper applies the required 128 bias for 8-bit output. [skipSamples]
+/// and [takeSamples] operate on inter-channel samples, not individual channel
+/// values.
+Uint8List frameToWavPcmBytes(
+  FlacFrame frame,
+  int outputBitsPerSample, {
+  int skipSamples = 0,
+  int? takeSamples,
+}) {
+  if (skipSamples < 0) {
+    throw RangeError.value(skipSamples, 'skipSamples', 'must be >= 0');
+  }
+  if (takeSamples != null && takeSamples < 0) {
+    throw RangeError.value(takeSamples, 'takeSamples', 'must be >= 0');
+  }
+
+  final outBps = ((outputBitsPerSample + 7) ~/ 8) * 8;
+  final bytesPerSampleFrame = frame.channelCount * (outBps ~/ 8);
+  final startSample = skipSamples.clamp(0, frame.blockSize).toInt();
+  final endSample = takeSamples == null
+      ? frame.blockSize
+      : (startSample + takeSamples).clamp(startSample, frame.blockSize).toInt();
+
+  final signedPcm = frameToInterleavedPcm(frame, outBps);
+  final start = startSample * bytesPerSampleFrame;
+  final end = endSample * bytesPerSampleFrame;
+  final pcm = Uint8List.sublistView(signedPcm, start, end);
+
+  if (outBps != 8) return pcm;
+  return Uint8List.fromList(
+    pcm.map((b) => (b.toSigned(8) + 128) & 0xFF).toList(),
+  );
 }
 
 void _writeAscii(Uint8List out, int offset, String s) {
