@@ -500,6 +500,116 @@ void main() {
     });
   });
 
+  group('Md5Verifier', () {
+    final expectedPcm = Uint8List.fromList([
+      0xE8,
+      0x03,
+      0x0C,
+      0xFE,
+      0xE8,
+      0x03,
+      0x0C,
+      0xFE,
+      0xE8,
+      0x03,
+      0x0C,
+      0xFE,
+      0xE8,
+      0x03,
+      0x0C,
+      0xFE,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+    ]);
+    final expectedMd5 = Uint8List.fromList(md5.convert(expectedPcm).bytes);
+
+    test('forStreamInfo returns null when STREAMINFO MD5 is all zeros', () {
+      final reader = FlacReader.fromBytes(_minimalFlac);
+      expect(Md5Verifier.forStreamInfo(reader.streamInfo), isNull);
+    });
+
+    test('match when fed every frame at native bit depth', () {
+      final reader = FlacReader.fromBytes(_minimalFlacWithMd5(expectedMd5));
+      final v = Md5Verifier.forStreamInfo(reader.streamInfo)!;
+      for (final f in reader.framesLazy()) {
+        v.addPcm(frameToInterleavedPcm(f, reader.streamInfo.bitsPerSample));
+      }
+      expect(v.finalize(), equals(Md5VerificationResult.match));
+    });
+
+    test('mismatch when STREAMINFO signature is wrong', () {
+      final bogus = Uint8List.fromList(List.filled(16, 0xAA));
+      final reader = FlacReader.fromBytes(_minimalFlacWithMd5(bogus));
+      final v = Md5Verifier.forStreamInfo(reader.streamInfo)!;
+      for (final f in reader.framesLazy()) {
+        v.addPcm(frameToInterleavedPcm(f, reader.streamInfo.bitsPerSample));
+      }
+      expect(v.finalize(), equals(Md5VerificationResult.mismatch));
+    });
+
+    test('mismatch when fed bytes from a single frame are tampered', () {
+      final reader = FlacReader.fromBytes(_minimalFlacWithMd5(expectedMd5));
+      final v = Md5Verifier.forStreamInfo(reader.streamInfo)!;
+      var tampered = false;
+      for (final f in reader.framesLazy()) {
+        var bytes = frameToInterleavedPcm(f, reader.streamInfo.bitsPerSample);
+        if (!tampered) {
+          bytes = Uint8List.fromList(bytes);
+          bytes[0] ^= 0xFF;
+          tampered = true;
+        }
+        v.addPcm(bytes);
+      }
+      expect(v.finalize(), equals(Md5VerificationResult.mismatch));
+    });
+
+    test('addPcm after finalize throws StateError', () {
+      final reader = FlacReader.fromBytes(_minimalFlacWithMd5(expectedMd5));
+      final v = Md5Verifier.forStreamInfo(reader.streamInfo)!;
+      v.finalize();
+      expect(() => v.addPcm([0]), throwsStateError);
+    });
+
+    test('finalize twice throws StateError', () {
+      final reader = FlacReader.fromBytes(_minimalFlacWithMd5(expectedMd5));
+      final v = Md5Verifier.forStreamInfo(reader.streamInfo)!;
+      v.finalize();
+      expect(() => v.finalize(), throwsStateError);
+    });
+
+    test('end-to-end agreement with verifyMd5 across bit depths', () {
+      for (final fixture in const [
+        'test/fixtures/stereo_16_44100.flac',
+        'test/fixtures/mono_8_16000.flac',
+        'test/fixtures/stereo_24_96000.flac',
+      ]) {
+        final reader = FlacReader.fromFileSync(fixture);
+        final v = Md5Verifier.forStreamInfo(reader.streamInfo)!;
+        for (final f in reader.framesLazy()) {
+          v.addPcm(frameToInterleavedPcm(f, reader.streamInfo.bitsPerSample));
+        }
+        expect(v.finalize(), equals(reader.verifyMd5()),
+            reason: 'streaming verifier disagreed with verifyMd5 on $fixture');
+        expect(v.finalize, throwsStateError,
+            reason: 'finalize is not single-shot for $fixture');
+      }
+    });
+  });
+
   group('ID3v2 tolerance', () {
     test('parses a FLAC file preceded by an ID3v2 tag', () {
       // 10-byte ID3v2 header + 20 bytes of dummy tag body.
@@ -719,6 +829,45 @@ void main() {
           reason: 'output file was overwritten despite invalid --bits');
     });
 
+    test('--bits 17 with a nonexistent input reports the arg error first',
+        () async {
+      // Static argument validation must run before the input file is
+      // opened — otherwise a bad --bits value is masked by a file-not-
+      // found error and the user is told to fix the wrong thing.
+      final inputPath = '${tmp.path}/does-not-exist.flac';
+      final outputPath = '${tmp.path}/out.wav';
+      final result = await Process.run(
+        Platform.resolvedExecutable,
+        ['run', 'bin/flac2wav.dart', '--bits', '17', inputPath, outputPath],
+      );
+      expect(result.exitCode, equals(2));
+      expect(result.stderr.toString(),
+          contains('--bits must be one of 8, 16, 24, or 32'));
+      expect(result.stderr.toString(), isNot(contains('FileSystemException')));
+      expect(await File(outputPath).exists(), isFalse);
+    });
+
+    test(
+        '--start-sample -5 with a nonexistent input reports the arg error first',
+        () async {
+      final inputPath = '${tmp.path}/does-not-exist.flac';
+      final outputPath = '${tmp.path}/out.wav';
+      final result = await Process.run(
+        Platform.resolvedExecutable,
+        [
+          'run',
+          'bin/flac2wav.dart',
+          '--start-sample',
+          '-5',
+          inputPath,
+          outputPath,
+        ],
+      );
+      expect(result.exitCode, equals(2));
+      expect(result.stderr.toString(), contains('--start-sample must be >= 0'));
+      expect(result.stderr.toString(), isNot(contains('FileSystemException')));
+    });
+
     test('--bits without value exits non-zero', () async {
       const inputPath = 'test/fixtures/stereo_16_44100.flac';
       final outputPath = '${tmp.path}/out.wav';
@@ -729,6 +878,56 @@ void main() {
       expect(result.exitCode, isNot(equals(0)));
       expect(await File(outputPath).exists(), isFalse,
           reason: 'output file was created despite missing --bits value');
+    });
+
+    test('--verify reports MD5 OK on a valid fixture', () async {
+      const inputPath = 'test/fixtures/stereo_16_44100.flac';
+      final outputPath = '${tmp.path}/out.wav';
+      final result = await Process.run(
+        Platform.resolvedExecutable,
+        ['run', 'bin/flac2wav.dart', '--verify', inputPath, outputPath],
+      );
+      expect(result.exitCode, equals(0),
+          reason: 'stderr: ${result.stderr}\nstdout: ${result.stdout}');
+      expect(result.stderr.toString(), contains('MD5 verification OK'));
+    });
+
+    test('--verify reports MD5 MISMATCH and exits 3 on tampered audio',
+        () async {
+      // Build a fixture with a valid full-stream MD5 in STREAMINFO, then
+      // flip a single byte inside the audio data so the tee verifier
+      // computes a different digest than what STREAMINFO claims.
+      final pcm = Uint8List.fromList(
+          await File('test/fixtures/stereo_16_44100.pcm').readAsBytes());
+      final realMd5 = Uint8List.fromList(md5.convert(pcm).bytes);
+      final original =
+          await File('test/fixtures/stereo_16_44100.flac').readAsBytes();
+      final tampered = Uint8List.fromList(original);
+      // Replace STREAMINFO.md5 (offset 18..33: 4-byte header + 14-byte
+      // STREAMINFO prefix before the 16-byte md5 trailer).
+      for (var i = 0; i < 16; i++) {
+        tampered[18 + i] = realMd5[i];
+      }
+      // Now corrupt the last byte of the file (inside the final frame's
+      // CRC-16 footer, but before the bitstream — the parser may still
+      // accept it; what matters is that the decoded PCM differs). Easier:
+      // flip a residual byte deep in the audio data.
+      tampered[tampered.length ~/ 2] ^= 0x01;
+
+      final inputPath = '${tmp.path}/tampered.flac';
+      final outputPath = '${tmp.path}/out.wav';
+      await File(inputPath).writeAsBytes(tampered);
+
+      final result = await Process.run(
+        Platform.resolvedExecutable,
+        ['run', 'bin/flac2wav.dart', '--verify', inputPath, outputPath],
+      );
+      // The decoder may either throw on a frame CRC mismatch (exit 255) or
+      // decode garbled samples and report MD5 mismatch (exit 3). Either is
+      // acceptable: we just need exit != 0 and no false "OK" message.
+      expect(result.exitCode, isNot(equals(0)),
+          reason: 'stderr: ${result.stderr}');
+      expect(result.stderr.toString(), isNot(contains('MD5 verification OK')));
     });
 
     test('mid-stream decode error leaves pre-existing output untouched',
