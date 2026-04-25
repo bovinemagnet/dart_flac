@@ -829,6 +829,45 @@ void main() {
           reason: 'output file was overwritten despite invalid --bits');
     });
 
+    test('--bits 17 with a nonexistent input reports the arg error first',
+        () async {
+      // Static argument validation must run before the input file is
+      // opened — otherwise a bad --bits value is masked by a file-not-
+      // found error and the user is told to fix the wrong thing.
+      final inputPath = '${tmp.path}/does-not-exist.flac';
+      final outputPath = '${tmp.path}/out.wav';
+      final result = await Process.run(
+        Platform.resolvedExecutable,
+        ['run', 'bin/flac2wav.dart', '--bits', '17', inputPath, outputPath],
+      );
+      expect(result.exitCode, equals(2));
+      expect(result.stderr.toString(),
+          contains('--bits must be one of 8, 16, 24, or 32'));
+      expect(result.stderr.toString(), isNot(contains('FileSystemException')));
+      expect(await File(outputPath).exists(), isFalse);
+    });
+
+    test(
+        '--start-sample -5 with a nonexistent input reports the arg error first',
+        () async {
+      final inputPath = '${tmp.path}/does-not-exist.flac';
+      final outputPath = '${tmp.path}/out.wav';
+      final result = await Process.run(
+        Platform.resolvedExecutable,
+        [
+          'run',
+          'bin/flac2wav.dart',
+          '--start-sample',
+          '-5',
+          inputPath,
+          outputPath,
+        ],
+      );
+      expect(result.exitCode, equals(2));
+      expect(result.stderr.toString(), contains('--start-sample must be >= 0'));
+      expect(result.stderr.toString(), isNot(contains('FileSystemException')));
+    });
+
     test('--bits without value exits non-zero', () async {
       const inputPath = 'test/fixtures/stereo_16_44100.flac';
       final outputPath = '${tmp.path}/out.wav';

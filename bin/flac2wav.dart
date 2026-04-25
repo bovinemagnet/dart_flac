@@ -86,13 +86,21 @@ Future<void> main(List<String> rawArgs) async {
   final inputPath = positional[0];
   final outputPath = positional[1];
 
+  // Validate the file-independent options before touching the input
+  // file, so a bad --bits / --start-sample / --duration-samples value
+  // is reported as an argument error rather than masked by a missing-
+  // file or malformed-FLAC error.
+  _validateStaticOptions(
+    bitsPerSample: outputBitsPerSample,
+    startSample: startSample,
+    durationSamples: durationSamples,
+  );
+
   final reader = await FlacReader.fromFile(inputPath);
   final info = reader.streamInfo;
   final outBps = outputBitsPerSample ?? info.bitsPerSample;
-  _validateOptions(
-    bitsPerSample: outBps,
+  _validateAgainstStream(
     startSample: startSample,
-    durationSamples: durationSamples,
     totalSamples: info.totalSamples,
   );
 
@@ -307,13 +315,20 @@ int _parseIntValue(String value, String option) {
   return parsed;
 }
 
-void _validateOptions({
-  required int bitsPerSample,
+/// File-independent option checks. Run before opening the input file so
+/// that a bad argument value is reported as an argument error, not as a
+/// downstream file/parse error.
+///
+/// [bitsPerSample] is the *user-supplied* `--bits` value (or `null` if
+/// the flag was not passed). When the user did not supply `--bits` the
+/// width comes from STREAMINFO, which is already constrained by the
+/// FLAC parser, so no static check is required.
+void _validateStaticOptions({
+  required int? bitsPerSample,
   required int startSample,
   required int? durationSamples,
-  required int totalSamples,
 }) {
-  if (![8, 16, 24, 32].contains(bitsPerSample)) {
+  if (bitsPerSample != null && ![8, 16, 24, 32].contains(bitsPerSample)) {
     stderr.writeln('flac2wav: --bits must be one of 8, 16, 24, or 32');
     exit(2);
   }
@@ -325,6 +340,13 @@ void _validateOptions({
     stderr.writeln('flac2wav: --duration-samples must be >= 0');
     exit(2);
   }
+}
+
+/// Stream-dependent checks that need STREAMINFO to evaluate.
+void _validateAgainstStream({
+  required int startSample,
+  required int totalSamples,
+}) {
   if (totalSamples > 0 && startSample > totalSamples) {
     stderr.writeln('flac2wav: --start-sample is beyond end of stream');
     exit(2);
