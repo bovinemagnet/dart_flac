@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.0.4 — 2026-04-25
+
+- Published archive shrunk from 60 KB to 38 KB by excluding `test/`
+  (including the binary `.flac` fixtures) and `tool/` (coverage and
+  issue-management scripts) via `.pubignore`. No library behaviour
+  change; consumers simply get a smaller download.
+- CI now pins the Dart SDK to `3.11.5`, explicitly installs Chrome for
+  the browser smoke test, and uploads `coverage/lcov.info` as a
+  workflow artefact on every run. No consumer-visible change; tightens
+  the development feedback loop.
+
 ## 0.0.3 — 2026-04-25
 
 - Add GitHub Actions CI for formatting, analysis, VM tests, browser smoke
