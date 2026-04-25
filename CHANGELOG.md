@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.0.5 — 2026-04-25
+
+- Add `Md5Verifier` (`lib/src/md5_verifier.dart`), a streaming MD5
+  verifier seeded from STREAMINFO. Feed it native-bit-depth interleaved
+  PCM bytes via `addPcm`, then call `finalize()` to get a
+  `Md5VerificationResult`. Lets callers verify file integrity in the
+  same pass they decode for some other purpose.
+- `flac2wav --verify` now does one decode pass instead of two on a
+  full-stream conversion: the WAV write loop tees one
+  `frameToInterleavedPcm` per frame into the streaming verifier, and
+  the post-write step just calls `finalize()`. For partial decodes
+  (`--start-sample` / `--duration-samples`) the CLI still falls back
+  to `reader.verifyMd5()` so a sliced extract is verified against the
+  original file's MD5, not the slice's own digest.
+- `flac2wav` now validates `--bits`, `--start-sample`, and
+  `--duration-samples` *before* opening the input file. Previously a
+  bad argument could be masked by a downstream file/parse error,
+  reporting the wrong problem to the user.
+- `Md5VerificationResult` is now defined in `md5_verifier.dart`
+  (re-exported from `package:dart_flac/dart_flac.dart` at the same
+  name; the public-API import path is unchanged). Direct imports of
+  `package:dart_flac/src/flac_reader.dart` will need updating, but
+  `src/` paths are not part of the public API.
+
 ## 0.0.4 — 2026-04-25
 
 - Published archive shrunk from 60 KB to 38 KB by excluding `test/`
