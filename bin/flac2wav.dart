@@ -102,10 +102,24 @@ Future<void> main(List<String> rawArgs) async {
     totalSamples: info.totalSamples,
   );
 
+  // The streaming MD5 verifier is only valid when this run iterates every
+  // sample in the file, in order. Any `--start-sample` / `--duration-samples`
+  // restriction means we'd be feeding it a subset of the stream's samples
+  // and the digest would never match. In that case we fall back to a
+  // second full-stream decode via `reader.verifyMd5()` — slower, but
+  // correct.
+  final teeMd5Eligible = verify && startSample == 0 && durationSamples == null;
+  final md5Verifier = teeMd5Eligible ? Md5Verifier.forStreamInfo(info) : null;
+
   if (samplesToWrite == null) {
     // Total length unknown — buffer in memory and write the whole WAV at
     // once, since we cannot pre-compute or patch the RIFF header sizes.
     final frames = reader.decodeFramesFromSample(startSample);
+    if (md5Verifier != null) {
+      for (final frame in frames) {
+        md5Verifier.addPcm(frameToInterleavedPcm(frame, info.bitsPerSample));
+      }
+    }
     final wav = writeWavBytes(
       frames: frames,
       sampleRate: info.sampleRate,
@@ -122,6 +136,8 @@ Future<void> main(List<String> rawArgs) async {
       sampleRate: info.sampleRate,
       channels: info.channels,
       outBitsPerSample: outBps,
+      nativeBitsPerSample: info.bitsPerSample,
+      md5Verifier: md5Verifier,
     );
   }
 
@@ -130,7 +146,19 @@ Future<void> main(List<String> rawArgs) async {
       '${samplesToWrite ?? info.totalSamples} samples).');
 
   if (verify) {
-    final result = reader.verifyMd5();
+    final Md5VerificationResult result;
+    if (md5Verifier != null) {
+      result = md5Verifier.finalize();
+    } else if (teeMd5Eligible) {
+      // forStreamInfo returned null — the signature in STREAMINFO is all
+      // zeros, so the encoder never computed one.
+      result = Md5VerificationResult.notComputed;
+    } else {
+      // Partial decode (start-sample / duration-samples). Fall back to a
+      // full-stream re-decode so verification reflects the original file
+      // rather than the slice we just wrote.
+      result = reader.verifyMd5();
+    }
     switch (result) {
       case Md5VerificationResult.match:
         stderr.writeln('flac2wav: MD5 verification OK.');
@@ -161,6 +189,8 @@ Future<void> _streamWavToFile({
   required int sampleRate,
   required int channels,
   required int outBitsPerSample,
+  required int nativeBitsPerSample,
+  Md5Verifier? md5Verifier,
 }) async {
   final tempPath = _tempPathFor(outputPath);
   final file = await File(tempPath).open(mode: FileMode.write);
@@ -192,6 +222,16 @@ Future<void> _streamWavToFile({
         await file.writeFrom(pcm);
         actualDataBytes += pcm.length;
         remaining -= take;
+
+        // Tee the same frame's samples into the MD5 verifier at the
+        // stream's *native* bit depth — that's what the FLAC reference
+        // hashed, regardless of what bit depth we are writing to WAV.
+        // Always feeding the whole frame is correct because the tee is
+        // only enabled when startSample == 0 && durationSamples == null,
+        // i.e. skip == 0 and take == frame.blockSize.
+        if (md5Verifier != null) {
+          md5Verifier.addPcm(frameToInterleavedPcm(frame, nativeBitsPerSample));
+        }
       }
     }
 

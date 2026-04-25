@@ -13,20 +13,6 @@ import 'metadata/seek_table.dart';
 import 'metadata/stream_info.dart';
 import 'metadata/vorbis_comment.dart';
 
-/// Result of verifying decoded PCM against the MD5 signature stored in
-/// the STREAMINFO block.
-enum Md5VerificationResult {
-  /// The MD5 of the decoded samples matched the signature in STREAMINFO.
-  match,
-
-  /// The MD5 of the decoded samples did not match.
-  mismatch,
-
-  /// The STREAMINFO signature is all zeros – the encoder did not compute
-  /// one, so verification is not possible.
-  notComputed,
-}
-
 /// The magic 4-byte marker that starts every valid FLAC file.
 const _flacMarker = [0x66, 0x4C, 0x61, 0x43]; // "fLaC"
 
