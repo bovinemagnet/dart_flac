@@ -21,5 +21,8 @@ export 'src/metadata/seek_table.dart';
 export 'src/metadata/vorbis_comment.dart';
 export 'src/metadata/cue_sheet.dart';
 export 'src/metadata/picture.dart';
-export 'src/frame/frame.dart';
-export 'src/frame/subframe.dart';
+// Frame types: deliberately narrow. `FrameParser` and the subframe-level
+// helpers stay package-private so the public API doesn't accidentally
+// commit to bit-stream parser internals.
+export 'src/frame/frame.dart'
+    show BlockingStrategy, ChannelAssignment, FlacFrame, FrameHeader;
