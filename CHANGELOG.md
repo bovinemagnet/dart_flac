@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.0.6 — 2026-05-17
+
+- Narrow the public API. `package:dart_flac/dart_flac.dart` previously
+  did wholesale `export 'src/frame/frame.dart'` and
+  `export 'src/frame/subframe.dart'`, which leaked every
+  public-by-default symbol in those files into the package surface.
+  The frame export is now `show`-filtered to exactly the four types
+  that have a documented place in the public API: `BlockingStrategy`,
+  `ChannelAssignment`, `FlacFrame`, and `FrameHeader`. The
+  `subframe.dart` re-export is dropped entirely.
+- As a result, `FrameParser` (the bit-stream parser, which takes a
+  non-public `BitReader`), `SubframeType`, and `SubframeDecoder` are no
+  longer re-exported from `package:dart_flac/dart_flac.dart`. These
+  were never documented as public API — they are internal helpers used
+  only by the decoder itself. This is breaking only for code that
+  imported those symbols by accident; the package is pre-1.0, so this
+  is the right time to tighten the surface to the "deliberately thin
+  API" goal.
+
 ## 0.0.5 — 2026-04-25
 
 - Add `Md5Verifier` (`lib/src/md5_verifier.dart`), a streaming MD5
