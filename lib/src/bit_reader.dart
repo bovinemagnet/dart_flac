@@ -30,9 +30,12 @@ class BitReader {
   /// Number of bits remaining in the buffer.
   int get bitsRemaining => (_data.length - _bytePos) * 8 - _bitPos;
 
-  /// Reads [n] bits as an unsigned integer (0 ≤ n ≤ 32).
+  /// Reads [n] bits as an unsigned integer (0 ≤ n ≤ 33).
+  ///
+  /// The 33-bit maximum accommodates the side channel of a 32-bit stream,
+  /// which is coded one bit wider than the stream's bit depth.
   int readBits(int n) {
-    assert(n >= 0 && n <= 32);
+    assert(n >= 0 && n <= 33);
     if (n == 0) return 0;
 
     var result = 0;
@@ -47,7 +50,10 @@ class BitReader {
       final take = remaining < bitsInByte ? remaining : bitsInByte;
       final shift = bitsInByte - take;
       final mask = (1 << take) - 1;
-      result = (result << take) | ((_data[_bytePos] >> shift) & mask);
+      // Accumulate with * and + rather than << and |: results beyond 32
+      // bits would be truncated by the shift on the web, where bitwise
+      // operators wrap at 32 bits.
+      result = result * (1 << take) + ((_data[_bytePos] >> shift) & mask);
       _bitPos += take;
       if (_bitPos == 8) {
         _bitPos = 0;
@@ -58,12 +64,15 @@ class BitReader {
     return result;
   }
 
-  /// Reads [n] bits as a signed integer using two's complement.
+  /// Reads [n] bits as a signed integer using two's complement (1 ≤ n ≤ 33).
   int readSignedBits(int n) {
-    assert(n > 0 && n <= 32);
+    assert(n > 0 && n <= 33);
     final val = readBits(n);
-    if (n < 32 && (val & (1 << (n - 1))) != 0) {
-      return val - (1 << n);
+    // 2^(n-1) built without a ≥32-bit shift so the arithmetic stays exact
+    // on the web, where shift operands wrap at 32 bits.
+    final signBit = n <= 31 ? (1 << (n - 1)) : (1 << 30) * (1 << (n - 31));
+    if (val >= signBit) {
+      return val - signBit * 2;
     }
     return val;
   }

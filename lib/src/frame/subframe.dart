@@ -17,8 +17,11 @@ abstract final class SubframeType {
 abstract final class SubframeDecoder {
   /// Decodes [blockSize] samples from [reader] using [bitsPerSample] bits.
   ///
-  /// Returns the decoded samples as an [Int32List].
-  static Int32List decode(BitReader reader, int blockSize, int bitsPerSample) {
+  /// Returns the decoded samples. The buffer is an [Int32List] except for
+  /// widths above 32 bits (the side channel of a 32-bit stream is coded at
+  /// 33 bits), where a plain list is used because an [Int32List] would
+  /// truncate the values.
+  static List<int> decode(BitReader reader, int blockSize, int bitsPerSample) {
     // Subframe header: 1 reserved bit, 6 type bits, wasted-bits flag + count.
     reader.readBit(); // zero bit (padding)
     final typeCode = reader.readBits(6);
@@ -31,17 +34,22 @@ abstract final class SubframeDecoder {
     }
     final effectiveBits = bitsPerSample - wastedBits;
 
-    final Int32List samples;
+    // Size the buffer for the full [bitsPerSample] width: the wasted-bits
+    // shift below restores values to that width even though they are read
+    // at [effectiveBits].
+    final List<int> samples = bitsPerSample > 32
+        ? List<int>.filled(blockSize, 0)
+        : Int32List(blockSize);
     if (typeCode == 0) {
-      samples = _decodeConstant(reader, blockSize, effectiveBits);
+      _decodeConstant(reader, samples, effectiveBits);
     } else if (typeCode == 1) {
-      samples = _decodeVerbatim(reader, blockSize, effectiveBits);
+      _decodeVerbatim(reader, samples, effectiveBits);
     } else if (typeCode >= 8 && typeCode <= 12) {
       final order = typeCode - 8;
-      samples = _decodeFixed(reader, blockSize, effectiveBits, order);
+      _decodeFixed(reader, samples, effectiveBits, order);
     } else if (typeCode >= 32 && typeCode <= 63) {
       final order = typeCode - 31; // LPC order 1–32
-      samples = _decodeLpc(reader, blockSize, effectiveBits, order);
+      _decodeLpc(reader, samples, effectiveBits, order);
     } else {
       throw FormatException('Unknown subframe type: $typeCode');
     }
@@ -61,10 +69,10 @@ abstract final class SubframeDecoder {
   // -------------------------------------------------------------------------
 
   /// Every sample has the same value.
-  static Int32List _decodeConstant(
-      BitReader r, int blockSize, int bitsPerSample) {
+  static void _decodeConstant(
+      BitReader r, List<int> samples, int bitsPerSample) {
     final value = r.readSignedBits(bitsPerSample);
-    return Int32List(blockSize)..fillRange(0, blockSize, value);
+    samples.fillRange(0, samples.length, value);
   }
 
   // -------------------------------------------------------------------------
@@ -72,13 +80,11 @@ abstract final class SubframeDecoder {
   // -------------------------------------------------------------------------
 
   /// Samples are stored uncompressed.
-  static Int32List _decodeVerbatim(
-      BitReader r, int blockSize, int bitsPerSample) {
-    final samples = Int32List(blockSize);
-    for (var i = 0; i < blockSize; i++) {
+  static void _decodeVerbatim(
+      BitReader r, List<int> samples, int bitsPerSample) {
+    for (var i = 0; i < samples.length; i++) {
       samples[i] = r.readSignedBits(bitsPerSample);
     }
-    return samples;
   }
 
   // -------------------------------------------------------------------------
@@ -86,9 +92,9 @@ abstract final class SubframeDecoder {
   // -------------------------------------------------------------------------
 
   /// Fixed linear predictor with [order] warm-up samples.
-  static Int32List _decodeFixed(
-      BitReader r, int blockSize, int bitsPerSample, int order) {
-    final samples = Int32List(blockSize);
+  static void _decodeFixed(
+      BitReader r, List<int> samples, int bitsPerSample, int order) {
+    final blockSize = samples.length;
 
     // Warm-up samples (uncompressed).
     for (var i = 0; i < order; i++) {
@@ -100,13 +106,11 @@ abstract final class SubframeDecoder {
 
     // Apply fixed predictor.
     _applyFixedPredictor(samples, order, blockSize);
-
-    return samples;
   }
 
   /// Applies the fixed predictor polynomial to restore sample values.
   static void _applyFixedPredictor(
-      Int32List samples, int order, int blockSize) {
+      List<int> samples, int order, int blockSize) {
     switch (order) {
       case 0:
         // order 0: signal = residual (already correct).
@@ -139,9 +143,9 @@ abstract final class SubframeDecoder {
   // -------------------------------------------------------------------------
 
   /// FIR linear predictor with [order] coefficients.
-  static Int32List _decodeLpc(
-      BitReader r, int blockSize, int bitsPerSample, int order) {
-    final samples = Int32List(blockSize);
+  static void _decodeLpc(
+      BitReader r, List<int> samples, int bitsPerSample, int order) {
+    final blockSize = samples.length;
 
     // Warm-up samples.
     for (var i = 0; i < order; i++) {
@@ -169,8 +173,6 @@ abstract final class SubframeDecoder {
       }
       samples[i] += sum >> qlpShift;
     }
-
-    return samples;
   }
 
   // -------------------------------------------------------------------------
@@ -179,7 +181,7 @@ abstract final class SubframeDecoder {
 
   /// Decodes Rice-coded residuals into [samples] starting at index [order].
   static void _decodeResidual(
-      BitReader r, int blockSize, int order, Int32List samples) {
+      BitReader r, int blockSize, int order, List<int> samples) {
     // Coding method: 0 = Rice (4-bit param), 1 = Rice2 (5-bit param).
     final codingMethod = r.readBits(2);
     final paramBits = codingMethod == 0 ? 4 : 5;
@@ -198,10 +200,17 @@ abstract final class SubframeDecoder {
       final riceParam = r.readBits(paramBits);
 
       if (riceParam == (1 << paramBits) - 1) {
-        // Escape code: samples are stored verbatim.
+        // Escape code: samples are stored verbatim. A 0-bit sample size
+        // means the partition carries no data and every residual is 0.
         final escapeBits = r.readBits(5);
-        for (var i = 0; i < samplesInPartition; i++) {
-          samples[sampleIndex++] = r.readSignedBits(escapeBits);
+        if (escapeBits == 0) {
+          for (var i = 0; i < samplesInPartition; i++) {
+            samples[sampleIndex++] = 0;
+          }
+        } else {
+          for (var i = 0; i < samplesInPartition; i++) {
+            samples[sampleIndex++] = r.readSignedBits(escapeBits);
+          }
         }
       } else {
         for (var i = 0; i < samplesInPartition; i++) {

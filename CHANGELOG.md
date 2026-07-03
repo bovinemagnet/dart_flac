@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- Fix 32-bit stream decoding. `BitReader.readSignedBits` never
+  sign-extended 32-bit reads, and the side channel of a stereo-decorrelated
+  32-bit frame is coded at 33 bits — one wider than the reader allowed and
+  the `Int32List` sample buffer could hold. Negative 32-bit samples now
+  decode correctly, and left/side, right/side, and mid/side 32-bit frames
+  reconstruct without truncating the side channel. Subframe sample buffers
+  fall back to a plain `List<int>` only for the 33-bit side-channel case;
+  all other widths keep the `Int32List` fast path, and the public
+  `FlacFrame.channelSamples` type is unchanged.
+- Fix a crash on escaped residual partitions that declare a 0-bit sample
+  size. RFC 9639 permits such partitions (every residual in the partition
+  is 0); the decoder now produces the zeros instead of throwing.
+- `decodeFrames(recoverFromCorruption: true)` now recovers from truncated
+  frames as documented. The tolerant parser previously caught only
+  `FormatException`, but the bit reader signals end-of-data with a
+  `StateError`, so a truncated file aborted the whole decode. Both are now
+  caught, reported through `onCorruption`, and decoding resumes at the
+  next frame sync code.
+
 ## 0.0.6 — 2026-05-17
 
 - Narrow the public API. `package:dart_flac/dart_flac.dart` previously
