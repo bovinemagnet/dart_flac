@@ -20,6 +20,24 @@
   `StateError`, so a truncated file aborted the whole decode. Both are now
   caught, reported through `onCorruption`, and decoding resumes at the
   next frame sync code.
+- Accept 7-byte UTF-8 coded numbers in frame headers. Sample numbers in
+  variable-blocksize streams are up to 36 bits, which encode as a 7-byte
+  `0xFE` sequence; the reader previously rejected it as invalid, so
+  frames beyond sample 2³¹ (roughly 13.5 hours at 44.1 kHz) failed to
+  decode.
+- Fix MD5 verification for bit depths that are not a multiple of 8.
+  The digest was computed over playback-shifted PCM, but the FLAC
+  reference encoder hashes each sample as-is in `ceil(bps/8)`
+  little-endian bytes, so `verifyMd5` reported a false mismatch on valid
+  12- and 20-bit files. A new `frameToMd5Pcm` function provides the
+  reference packing (identical to `frameToInterleavedPcm` for
+  byte-aligned depths); `computePcmMd5`, `flac2wav --verify`, and the
+  `Md5Verifier` documentation now use it.
+- `StreamingFlacDecoder` no longer wedges on a corrupt frame. A frame
+  that failed to parse (e.g. CRC mismatch) threw synchronously out of
+  `addBytes` and left the decoder stuck re-throwing at the same offset.
+  Corrupt frames are now reported as error events on the `frames`
+  stream, and decoding resumes at the next frame sync code.
 
 ## 0.0.6 — 2026-05-17
 

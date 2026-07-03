@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
@@ -410,6 +411,20 @@ void main() {
       expect(r.readUtf8CodedNumber(), equals(128));
     });
 
+    test('UTF-8 coded number: seven-byte sequence (36-bit value)', () {
+      // Sample numbers in variable-blocksize streams are up to 36 bits,
+      // which need the 7-byte 0xFE form. 2^35 = FE A0 80 80 80 80 80.
+      final r = BitReader(
+          Uint8List.fromList([0xFE, 0xA0, 0x80, 0x80, 0x80, 0x80, 0x80]));
+      expect(r.readUtf8CodedNumber(), equals(0x800000000));
+    });
+
+    test('UTF-8 coded number: maximum 36-bit value', () {
+      final r = BitReader(
+          Uint8List.fromList([0xFE, 0xBF, 0xBF, 0xBF, 0xBF, 0xBF, 0xBF]));
+      expect(r.readUtf8CodedNumber(), equals(0xFFFFFFFFF));
+    });
+
     test('readSignedBits(32) sign-extends a negative value', () {
       final r = BitReader(Uint8List.fromList([0xFF, 0xFF, 0xFF, 0xFF]));
       expect(r.readSignedBits(32), equals(-1));
@@ -520,6 +535,30 @@ void main() {
       final reader = FlacReader.fromBytes(bytes);
       expect(reader.verifyMd5(), equals(Md5VerificationResult.mismatch));
     });
+
+    test('verifyMd5 uses libFLAC packing for 12-bit streams', () {
+      // The reference encoder hashes each sample as-is in ceil(bps/8)
+      // little-endian bytes: a 12-bit sample occupies 2 bytes with no
+      // left shift (unlike playback PCM, which is shifted to full scale).
+      const value = -1000;
+      final packed = <int>[
+        for (var i = 0; i < 4; i++) ...[value & 0xFF, (value >> 8) & 0xFF],
+      ];
+      final digest = md5.convert(packed).bytes;
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 1,
+        bitsPerSample: 12,
+        totalSamples: 4,
+        md5: digest,
+        frames: [
+          _buildConstantMonoFrame(
+              value: value, blockSize: 4, bitsPerSample: 12),
+        ],
+      );
+      final reader = FlacReader.fromBytes(bytes);
+      expect(reader.verifyMd5(), equals(Md5VerificationResult.match));
+    });
   });
 
   group('Md5Verifier', () {
@@ -622,7 +661,7 @@ void main() {
         final reader = FlacReader.fromFileSync(fixture);
         final v = Md5Verifier.forStreamInfo(reader.streamInfo)!;
         for (final f in reader.framesLazy()) {
-          v.addPcm(frameToInterleavedPcm(f, reader.streamInfo.bitsPerSample));
+          v.addPcm(frameToMd5Pcm(f, reader.streamInfo.bitsPerSample));
         }
         expect(v.finalize(), equals(reader.verifyMd5()),
             reason: 'streaming verifier disagreed with verifyMd5 on $fixture');
@@ -1587,6 +1626,25 @@ void main() {
       expect(info.sampleRate, equals(44100));
       expect(frames.length, equals(2));
     });
+
+    test(
+        'reports a corrupt frame as a stream error and resumes at the '
+        'next sync', () async {
+      final corrupted = Uint8List.fromList(_minimalFlac);
+      corrupted[57] ^= 0xFF; // frame 0's footer CRC-16 → CRC mismatch
+      final decoder = StreamingFlacDecoder();
+      final frames = <FlacFrame>[];
+      final errors = <Object>[];
+      final done = Completer<void>();
+      decoder.frames
+          .listen(frames.add, onError: errors.add, onDone: done.complete);
+      decoder.addBytes(corrupted); // must not throw
+      decoder.close();
+      await done.future;
+      expect(errors, isNotEmpty);
+      // Frame 1, after the corrupt frame 0, still decodes.
+      expect(frames, hasLength(1));
+    });
   });
 
   group('pcmChunks', () {
@@ -1774,6 +1832,7 @@ Uint8List _buildFlacFromStreamInfoAndFrames({
   required int bitsPerSample,
   required int totalSamples,
   required List<List<int>> frames,
+  List<int>? md5,
 }) {
   final si = _encodeStreamInfo(
     minBlockSize: 4,
@@ -1782,6 +1841,7 @@ Uint8List _buildFlacFromStreamInfoAndFrames({
     channels: channels,
     bitsPerSample: bitsPerSample,
     totalSamples: totalSamples,
+    md5: md5,
   );
   return Uint8List.fromList([
     0x66, 0x4c, 0x61, 0x43, // fLaC
@@ -1799,6 +1859,7 @@ List<int> _encodeStreamInfo({
   required int channels,
   required int bitsPerSample,
   required int totalSamples,
+  List<int>? md5,
 }) {
   final bw = _BitWriter();
   bw.writeBits(minBlockSize, 16);
@@ -1811,7 +1872,7 @@ List<int> _encodeStreamInfo({
   bw.writeBits(totalSamples >> 32, 4);
   bw.writeBits(totalSamples & 0xFFFFFFFF, 32);
   final body = bw.toBytes();
-  return [...body, ...List.filled(16, 0)]; // MD5 all-zero
+  return [...body, ...(md5 ?? List.filled(16, 0))];
 }
 
 /// Builds a single FLAC audio frame with two CONSTANT subframes, encoded
@@ -1868,6 +1929,40 @@ List<int> _buildConstantStereoFrame({
   bw2.writeSignedBits(ch1Value, ch1Bits);
 
   // Byte-align for footer CRC-16.
+  bw2.alignToByte();
+  final body = bw2.toBytes();
+  final crc16 = _crc16(body);
+  return [...body, (crc16 >> 8) & 0xFF, crc16 & 0xFF];
+}
+
+/// Builds a single mono frame with one CONSTANT subframe.
+List<int> _buildConstantMonoFrame({
+  required int value,
+  required int blockSize,
+  required int bitsPerSample,
+}) {
+  final bw = _BitWriter();
+  bw.writeBits(0x3FFE, 14); // sync
+  bw.writeBit(0); // reserved
+  bw.writeBit(0); // fixed blocksize
+  bw.writeBits(0x7, 4); // 16-bit follow-up blocksize
+  bw.writeBits(0x9, 4); // 44100
+  bw.writeBits(0, 4); // independent, 1 channel
+  bw.writeBits(_sampleSizeCode(bitsPerSample), 3);
+  bw.writeBit(0); // reserved
+  bw.writeBits(0x00, 8); // UTF-8 frame number 0
+  bw.writeBits(blockSize - 1, 16);
+  bw.alignToByte();
+  final hdr = bw.toBytes();
+  final bw2 = _BitWriter()
+    ..writeAllBytes(hdr)
+    ..writeBits(_crc8(hdr), 8);
+
+  bw2.writeBit(0); // zero padding
+  bw2.writeBits(0, 6); // type code 0 = CONSTANT
+  bw2.writeBit(0); // no wasted bits
+  bw2.writeSignedBits(value, bitsPerSample);
+
   bw2.alignToByte();
   final body = bw2.toBytes();
   final crc16 = _crc16(body);

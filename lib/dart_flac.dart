@@ -8,7 +8,8 @@ library;
 
 export 'src/flac_reader.dart'
     show FlacReader, decodeFlacBytesToPcm, decodeFlacFileToPcm;
-export 'src/md5_verifier.dart' show Md5Verifier, Md5VerificationResult;
+export 'src/md5_verifier.dart'
+    show Md5Verifier, Md5VerificationResult, frameToMd5Pcm;
 export 'src/pcm_output.dart' show frameToInterleavedPcm;
 export 'src/streaming_decoder.dart' show StreamingFlacDecoder;
 export 'src/wav_writer.dart'
