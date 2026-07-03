@@ -294,7 +294,7 @@ class FrameParser {
     // -----------------------------------------------------------------------
     // Subframes (one per channel)
     // -----------------------------------------------------------------------
-    final rawSamples = <Int32List>[];
+    final rawSamples = <List<int>>[];
     for (var ch = 0; ch < channelCount; ch++) {
       // Side channels in stereo-coded frames need 1 extra bit.
       final extraBit = _sideChannelExtraBit(channelAssignment, ch);
@@ -349,10 +349,17 @@ class FrameParser {
 
   /// Applies joint-stereo decorrelation and returns the reconstructed PCM
   /// channel data.
+  ///
+  /// Raw subframe buffers are `List<int>` because a side channel of a
+  /// 32-bit stream carries 33-bit samples; the decorrelated output always
+  /// fits the stream's bit depth, so it is returned as [Int32List]s.
   List<Int32List> _decorrelate(
-      int channelAssignment, List<Int32List> raw, int bitsPerSample) {
+      int channelAssignment, List<List<int>> raw, int bitsPerSample) {
     if (channelAssignment == ChannelAssignment.independent) {
-      return raw;
+      return [
+        for (final channel in raw)
+          channel is Int32List ? channel : Int32List.fromList(channel),
+      ];
     }
 
     final left = Int32List(raw[0].length);
@@ -400,9 +407,10 @@ class FrameParser {
     return frames;
   }
 
-  /// Like [parseAllFrames], but on any [FormatException] thrown by
-  /// [parseFrame] (corrupt sync, bad CRC, truncated subframe) it scans
-  /// forward for the next valid frame sync code and resumes decoding.
+  /// Like [parseAllFrames], but on any [FormatException] (corrupt sync,
+  /// bad CRC) or [StateError] (truncated frame — the bit reader ran out of
+  /// data) thrown by [parseFrame] it scans forward for the next valid
+  /// frame sync code and resumes decoding.
   ///
   /// The [onError] callback is invoked once per dropped frame with the
   /// offset at which the failure occurred and the raised error.
@@ -421,7 +429,8 @@ class FrameParser {
         final (frame, nextOffset) = parseFrame(offset);
         frames.add(frame);
         offset = nextOffset;
-      } on FormatException catch (e) {
+      } catch (e) {
+        if (e is! FormatException && e is! StateError) rethrow;
         onError(offset, e);
         final next = findNextFrameSync(offset + 1);
         if (next < 0) break;

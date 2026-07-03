@@ -409,6 +409,28 @@ void main() {
       final r = BitReader(Uint8List.fromList([0xC2, 0x80]));
       expect(r.readUtf8CodedNumber(), equals(128));
     });
+
+    test('readSignedBits(32) sign-extends a negative value', () {
+      final r = BitReader(Uint8List.fromList([0xFF, 0xFF, 0xFF, 0xFF]));
+      expect(r.readSignedBits(32), equals(-1));
+    });
+
+    test('readSignedBits(32) leaves a positive value unchanged', () {
+      final r = BitReader(Uint8List.fromList([0x7F, 0xFF, 0xFF, 0xFF]));
+      expect(r.readSignedBits(32), equals(0x7FFFFFFF));
+    });
+
+    test('readBits supports 33-bit reads', () {
+      // Side channels of a 32-bit stream are coded at 33 bits.
+      final r = BitReader(Uint8List.fromList([0x80, 0x00, 0x00, 0x00, 0x00]));
+      expect(r.readBits(33), equals(0x100000000));
+    });
+
+    test('readSignedBits(33) sign-extends the side-channel width', () {
+      // -4000000000 in 33-bit two's complement is 0x1_1194_D800.
+      final r = BitReader(Uint8List.fromList([0x88, 0xCA, 0x6C, 0x00, 0x00]));
+      expect(r.readSignedBits(33), equals(-4000000000));
+    });
   });
 
   group('CRC utilities', () {
@@ -663,6 +685,21 @@ void main() {
       // the error callback must fire at least once.
       expect(errors, isNotEmpty);
       expect(frames.length, lessThan(2));
+    });
+
+    test('tolerant decode recovers frames from a truncated file', () {
+      final full = File('test/fixtures/stereo_16_44100.flac').readAsBytesSync();
+      // Drop the final byte so the last frame is cut mid-parse (its
+      // footer CRC-16 can no longer be read).
+      final truncated = Uint8List.sublistView(full, 0, full.length - 1);
+      final reader = FlacReader.fromBytes(truncated);
+      final errors = <Object>[];
+      final frames = reader.decodeFrames(
+        recoverFromCorruption: true,
+        onCorruption: (_, e) => errors.add(e),
+      );
+      expect(frames, isNotEmpty);
+      expect(errors, isNotEmpty);
     });
   });
 
@@ -1232,6 +1269,86 @@ void main() {
     });
   });
 
+  group('32-bit streams', () {
+    test('independent constant subframes decode negative 32-bit samples', () {
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 2,
+        bitsPerSample: 32,
+        totalSamples: 4,
+        frames: [
+          _buildConstantStereoFrame(
+            channelAssignment: 1, // 2 independent channels
+            ch0Value: -123456789,
+            ch1Value: 0x7FFFFFFF,
+            blockSize: 4,
+            bitsPerSample: 32,
+            sampleRate: 44100,
+          ),
+        ],
+      );
+      final frame = FlacReader.fromBytes(bytes).decodeFrames().single;
+      expect(frame.channelSamples[0], everyElement(equals(-123456789)));
+      expect(frame.channelSamples[1], everyElement(equals(0x7FFFFFFF)));
+    });
+
+    test('left/side stereo reconstructs a 33-bit side channel', () {
+      const left = -2000000000;
+      const right = 2000000000;
+      const side = left - right; // -4000000000: needs 33 bits
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 2,
+        bitsPerSample: 32,
+        totalSamples: 4,
+        frames: [
+          _buildConstantStereoFrame(
+            channelAssignment: 8, // left/side
+            ch0Value: left,
+            ch1Value: side,
+            blockSize: 4,
+            bitsPerSample: 32,
+            sampleRate: 44100,
+          ),
+        ],
+      );
+      final frame = FlacReader.fromBytes(bytes).decodeFrames().single;
+      expect(frame.channelSamples[0], everyElement(equals(left)));
+      expect(frame.channelSamples[1], everyElement(equals(right)));
+    });
+  });
+
+  group('Escaped residual partitions', () {
+    test('escape partition stores residuals verbatim', () {
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 1,
+        bitsPerSample: 16,
+        totalSamples: 4,
+        frames: [
+          _buildFixedEscapeMonoFrame(
+              blockSize: 4, escapeBits: 5, residuals: [1, -2, 3, -4]),
+        ],
+      );
+      final frame = FlacReader.fromBytes(bytes).decodeFrames().single;
+      expect(frame.channelSamples[0], equals([1, -2, 3, -4]));
+    });
+
+    test('0-bit escape partition decodes as all-zero residuals', () {
+      // RFC 9639: an escaped partition may declare a 0-bit sample size,
+      // meaning every residual in the partition is 0.
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 1,
+        bitsPerSample: 16,
+        totalSamples: 4,
+        frames: [_buildFixedEscapeMonoFrame(blockSize: 4, escapeBits: 0)],
+      );
+      final frame = FlacReader.fromBytes(bytes).decodeFrames().single;
+      expect(frame.channelSamples[0], everyElement(equals(0)));
+    });
+  });
+
   group('Multiple metadata blocks per type', () {
     test('picturesAll exposes every PICTURE block', () {
       // Build a stream with two PICTURE blocks back-to-back.
@@ -1720,9 +1837,8 @@ List<int> _buildConstantStereoFrame({
   bw.writeBits(0x9, 4);
   // Channel assignment.
   bw.writeBits(channelAssignment, 4);
-  // Bits per sample: 16 = 0x4.
-  assert(bitsPerSample == 16);
-  bw.writeBits(0x4, 3);
+  // Bits per sample.
+  bw.writeBits(_sampleSizeCode(bitsPerSample), 3);
   bw.writeBit(0); // reserved
   // UTF-8 frame number 0.
   bw.writeBits(0x00, 8);
@@ -1795,6 +1911,63 @@ List<int> _buildConstantMonoFrameWithWastedBits({
   bw2.writeBit(1);
   // Value at effective width = bitsPerSample - wastedBits.
   bw2.writeSignedBits(rawValue, bitsPerSample - wastedBits);
+
+  bw2.alignToByte();
+  final body = bw2.toBytes();
+  final crc16 = _crc16(body);
+  return [...body, (crc16 >> 8) & 0xFF, crc16 & 0xFF];
+}
+
+/// 3-bit frame-header sample-size code for a given bit depth.
+int _sampleSizeCode(int bitsPerSample) => switch (bitsPerSample) {
+      8 => 0x1,
+      12 => 0x2,
+      16 => 0x4,
+      20 => 0x5,
+      24 => 0x6,
+      32 => 0x7,
+      _ => throw ArgumentError.value(bitsPerSample, 'bitsPerSample'),
+    };
+
+/// Builds a mono 16-bit frame whose single FIXED order-0 subframe stores
+/// its residuals in one escaped partition of [escapeBits] bits each.
+/// An [escapeBits] of 0 means the partition carries no residual data and
+/// every residual is 0.
+List<int> _buildFixedEscapeMonoFrame({
+  required int blockSize,
+  required int escapeBits,
+  List<int> residuals = const [],
+}) {
+  final bw = _BitWriter();
+  bw.writeBits(0x3FFE, 14); // sync
+  bw.writeBit(0); // reserved
+  bw.writeBit(0); // fixed blocksize
+  bw.writeBits(0x7, 4); // 16-bit follow-up blocksize
+  bw.writeBits(0x9, 4); // 44100
+  bw.writeBits(0, 4); // independent, 1 channel
+  bw.writeBits(0x4, 3); // 16-bit
+  bw.writeBit(0); // reserved
+  bw.writeBits(0x00, 8); // UTF-8 frame number 0
+  bw.writeBits(blockSize - 1, 16);
+  bw.alignToByte();
+  final hdr = bw.toBytes();
+  final bw2 = _BitWriter()
+    ..writeAllBytes(hdr)
+    ..writeBits(_crc8(hdr), 8);
+
+  // Subframe header: FIXED order 0 (type code 8), no wasted bits.
+  bw2.writeBit(0);
+  bw2.writeBits(8, 6);
+  bw2.writeBit(0);
+  // Residual: Rice method 0, partition order 0, escape code (param 0xF),
+  // 5-bit escape sample size, then the raw residuals.
+  bw2.writeBits(0, 2);
+  bw2.writeBits(0, 4);
+  bw2.writeBits(0xF, 4);
+  bw2.writeBits(escapeBits, 5);
+  for (final v in residuals) {
+    bw2.writeSignedBits(v, escapeBits);
+  }
 
   bw2.alignToByte();
   final body = bw2.toBytes();
