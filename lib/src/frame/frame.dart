@@ -267,7 +267,8 @@ class FrameParser {
     // CRC-8 covers all frame header bytes up to (but not including) the CRC.
     final headerEndOffset = r.bytePosition; // absolute offset in _data
     final headerCrc8 = r.readByte();
-    final computedCrc8 = crc8(_data.sublist(startOffset, headerEndOffset));
+    final computedCrc8 =
+        crc8(Uint8List.sublistView(_data, startOffset, headerEndOffset));
     if (headerCrc8 != computedCrc8) {
       throw FormatException(
           'Frame header CRC-8 mismatch at offset $startOffset: '
@@ -317,7 +318,8 @@ class FrameParser {
     final frameCrc16Hi = r.readByte();
     final frameCrc16Lo = r.readByte();
     final storedCrc16 = (frameCrc16Hi << 8) | frameCrc16Lo;
-    final computedCrc16 = crc16(_data.sublist(startOffset, frameEndOffset));
+    final computedCrc16 =
+        crc16(Uint8List.sublistView(_data, startOffset, frameEndOffset));
     if (storedCrc16 != computedCrc16) {
       throw FormatException('Frame CRC-16 mismatch at offset $startOffset: '
           'expected 0x${computedCrc16.toRadixString(16)}, '

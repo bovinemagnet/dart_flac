@@ -367,6 +367,30 @@ void main() {
       expect(r.readUnary(), equals(4));
     });
 
+    test('reads unary code crossing byte boundaries', () {
+      // 0b1010_0000 0b0000_0000 0b0000_1000: after a 3-bit read the next
+      // 17 bits are zero, then the stop bit.
+      final r = BitReader(Uint8List.fromList([0xA0, 0x00, 0x08]));
+      expect(r.readBits(3), equals(5));
+      expect(r.readUnary(), equals(17));
+      // The reader sits right after the stop bit.
+      expect(r.readBits(3), equals(0));
+    });
+
+    test('reads consecutive unary codes within one byte', () {
+      // 0b10100110 → unary values 0, 1, 2, 0.
+      final r = BitReader(Uint8List.fromList([0xA6]));
+      expect(r.readUnary(), equals(0));
+      expect(r.readUnary(), equals(1));
+      expect(r.readUnary(), equals(2));
+      expect(r.readUnary(), equals(0));
+    });
+
+    test('unary code hitting end of data throws StateError', () {
+      final r = BitReader(Uint8List.fromList([0x00]));
+      expect(() => r.readUnary(), throwsStateError);
+    });
+
     test('reads Rice-coded value', () {
       // Rice(2): value = 3 → zigzag = 6 = 0b110
       // unary(6>>2=1) + binary(6 & 3 = 2, 2 bits) = 0 1 10 = 0b0110

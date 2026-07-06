@@ -109,14 +109,54 @@ class BitReader {
     return _data[_bytePos++];
   }
 
+  /// Number of leading zeros in each 8-bit value (8 for zero itself).
+  static final Uint8List _leadingZeros8 = _buildLeadingZeros8();
+
+  static Uint8List _buildLeadingZeros8() {
+    final table = Uint8List(256);
+    table[0] = 8;
+    for (var i = 1; i < 256; i++) {
+      var v = i;
+      var zeros = 0;
+      while (v < 0x80) {
+        zeros++;
+        v <<= 1;
+      }
+      table[i] = zeros;
+    }
+    return table;
+  }
+
   /// Reads an unary-coded non-negative integer: counts the number of 0 bits
   /// before the first 1 bit (stop bit).
+  ///
+  /// This is the innermost loop of Rice decoding, so it scans a byte at a
+  /// time rather than a bit at a time.
   int readUnary() {
     var count = 0;
-    while (readBit() == 0) {
-      count++;
+    while (true) {
+      if (_bytePos >= _data.length) {
+        throw StateError('Not enough data: unary code ran past end of data.');
+      }
+      // The bits of the current byte not yet consumed, left-aligned.
+      final pending = (_data[_bytePos] << _bitPos) & 0xFF;
+      if (pending != 0) {
+        final zeros = _leadingZeros8[pending];
+        count += zeros;
+        // Skip the zeros and the stop bit. The stop bit is within this
+        // byte, so the new position is at most one byte further on.
+        _bitPos += zeros + 1;
+        if (_bitPos == 8) {
+          _bitPos = 0;
+          _bytePos++;
+        }
+        return count;
+      }
+      // Every remaining bit in this byte is zero.
+      count += 8 - _bitPos;
+      _bitPos = 0;
+      _bytePos++;
     }
-    return count;
   }
 
   /// Reads a Rice-coded signed integer with the given Rice parameter [k].
