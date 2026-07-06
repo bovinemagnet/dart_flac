@@ -71,6 +71,10 @@ class StreamingFlacDecoder {
   /// Appends [chunk] to the internal buffer and advances the state machine
   /// as far as the buffered bytes allow.
   ///
+  /// A corrupt audio frame (e.g. a CRC mismatch) is reported as an error
+  /// event on [frames]; decoding then resumes at the next frame sync code
+  /// rather than throwing from this method.
+  ///
   /// Throws [StateError] if [close] has already been called.
   void addBytes(Uint8List chunk) {
     if (_closed) {
@@ -246,6 +250,20 @@ class StreamingFlacDecoder {
       return true;
     } on StateError {
       // Ran off the end of the buffer – need more bytes.
+      return false;
+    } on FormatException catch (e, st) {
+      // Corrupt frame (bad CRC, malformed header). Report it on the
+      // frames stream and resume at the next plausible sync code so one
+      // bad frame does not wedge the decoder.
+      _framesCtrl.addError(e, st);
+      final next = _scanForNextSync(_pos + 1);
+      if (next >= 0) {
+        _pos = next;
+        return true;
+      }
+      // No further sync in the buffer. Keep only the final byte — it may
+      // be the first half of a sync pair split across chunks.
+      _pos = _buffer.isEmpty ? 0 : _buffer.length - 1;
       return false;
     }
   }

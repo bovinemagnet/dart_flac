@@ -125,7 +125,7 @@ Future<void> main(List<String> rawArgs) async {
     final frames = reader.decodeFramesFromSample(startSample);
     if (md5Verifier != null) {
       for (final frame in frames) {
-        md5Verifier.addPcm(frameToInterleavedPcm(frame, info.bitsPerSample));
+        md5Verifier.addPcm(frameToMd5Pcm(frame, info.bitsPerSample));
       }
     }
     final wav = writeWavBytes(
@@ -238,7 +238,7 @@ Future<void> _streamWavToFile({
         // only enabled when startSample == 0 && durationSamples == null,
         // i.e. skip == 0 and take == frame.blockSize.
         if (md5Verifier != null) {
-          md5Verifier.addPcm(frameToInterleavedPcm(frame, nativeBitsPerSample));
+          md5Verifier.addPcm(frameToMd5Pcm(frame, nativeBitsPerSample));
         }
       }
     }
