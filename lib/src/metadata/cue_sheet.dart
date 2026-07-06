@@ -81,6 +81,13 @@ class CueSheetBlock extends MetadataBlock {
   static CueSheetBlock parse(bool isLast, int length, Uint8List data) {
     var offset = 0;
 
+    // Fixed-size prefix: 128-byte MCN + 8-byte lead-in + 1 flag byte +
+    // 258 reserved bytes + 1 track-count byte.
+    if (data.length < 396) {
+      throw FormatException('CUESHEET block truncated: ${data.length} bytes, '
+          'needs at least 396.');
+    }
+
     // Media catalog number: 128 ASCII bytes, NUL-terminated / padded.
     final mcnBytes = data.sublist(offset, offset + 128);
     final mcnEnd = mcnBytes.indexOf(0);
@@ -100,6 +107,13 @@ class CueSheetBlock extends MetadataBlock {
     final trackCount = data[offset++];
     final tracks = <CueSheetTrack>[];
     for (var t = 0; t < trackCount; t++) {
+      // Fixed track fields: 8-byte offset + 1 number + 12 ISRC + 1 flags +
+      // 13 reserved + 1 index-count byte.
+      if (data.length - offset < 36) {
+        throw FormatException('CUESHEET block truncated: track $t of '
+            '$trackCount needs 36 bytes but only ${data.length - offset} '
+            'remain.');
+      }
       final trackOffset = readUint64BE(data, offset);
       offset += 8;
       final trackNumber = data[offset++];
@@ -116,6 +130,12 @@ class CueSheetBlock extends MetadataBlock {
       final indexCount = data[offset++];
       final indices = <CueSheetTrackIndex>[];
       for (var i = 0; i < indexCount; i++) {
+        // 8-byte offset + 1 index number + 3 reserved bytes.
+        if (data.length - offset < 12) {
+          throw FormatException('CUESHEET block truncated: index point $i '
+              'of $indexCount in track $t needs 12 bytes but only '
+              '${data.length - offset} remain.');
+        }
         final indexOffset = readUint64BE(data, offset);
         offset += 8;
         final indexNumber = data[offset++];

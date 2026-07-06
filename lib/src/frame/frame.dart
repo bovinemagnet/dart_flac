@@ -138,7 +138,10 @@ class FrameParser {
           'at offset $offset.');
     }
 
-    r.readBit(); // reserved, must be 0
+    if (r.readBit() != 0) {
+      throw FormatException(
+          'Non-zero reserved bit after frame sync code at offset $offset.');
+    }
     final blockingStrategyBit = r.readBit();
     final blockingStrategy = blockingStrategyBit == 1
         ? BlockingStrategy.variableBlocksize
@@ -148,7 +151,10 @@ class FrameParser {
     final sampleRateBits = r.readBits(4);
     final channelAssignmentBits = r.readBits(4);
     final sampleSizeBits = r.readBits(3);
-    r.readBit(); // reserved, must be 0
+    if (r.readBit() != 0) {
+      throw FormatException('Non-zero reserved bit after sample-size field '
+          'in frame header at offset $offset.');
+    }
 
     // UTF-8 coded frame / sample number.
     final number = r.readUtf8CodedNumber();

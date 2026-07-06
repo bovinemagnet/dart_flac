@@ -155,8 +155,12 @@ abstract final class SubframeDecoder {
     // Quantised LPC precision (4 bits: precision = value + 1).
     final qlpPrecision = r.readBits(4) + 1;
 
-    // QLP shift (5-bit signed integer).
+    // QLP shift (5-bit signed integer; negative values are forbidden by
+    // RFC 9639).
     final qlpShift = r.readSignedBits(5);
+    if (qlpShift < 0) {
+      throw FormatException('Negative LPC quantisation shift: $qlpShift.');
+    }
 
     // QLP coefficients.
     final coefficients =
@@ -188,6 +192,15 @@ abstract final class SubframeDecoder {
 
     final partitionOrder = r.readBits(4);
     final partitionCount = 1 << partitionOrder;
+
+    // RFC 9639: the block size must be evenly divisible by the partition
+    // count, and the first partition must hold at least one residual after
+    // the predictor's warm-up samples.
+    if (blockSize % partitionCount != 0 ||
+        (blockSize >> partitionOrder) <= order) {
+      throw FormatException('Invalid Rice partition order $partitionOrder '
+          'for block size $blockSize and predictor order $order.');
+    }
 
     var sampleIndex = order;
     for (var part = 0; part < partitionCount; part++) {
