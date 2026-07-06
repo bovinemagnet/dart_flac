@@ -387,9 +387,14 @@ class FrameParser {
           final mid = raw[0][i];
           final side = raw[1][i];
           // Restore LSB lost by the mid = (left+right)>>1 operation.
-          final m = (mid << 1) | (side & 1);
-          left[i] = (m + side) >> 1;
-          right[i] = (m - side) >> 1;
+          // * and ~/ rather than shifts: the doubled mid and the 33-bit
+          // side push these intermediates outside the range JavaScript
+          // bitwise operators handle on the web. Both sums are always
+          // even (m + side = 2*left, m - side = 2*right), so truncating
+          // division is exact.
+          final m = mid * 2 + (side & 1);
+          left[i] = (m + side) ~/ 2;
+          right[i] = (m - side) ~/ 2;
         }
     }
 

@@ -169,13 +169,18 @@ abstract final class SubframeDecoder {
     // Residual.
     _decodeResidual(r, blockSize, order, samples);
 
-    // Apply LPC predictor.
+    // Apply LPC predictor. The accumulator can reach ~2^52, far outside
+    // the range JavaScript bitwise operators handle on the web, so the
+    // arithmetic shift is done as an exact floor division: subtracting
+    // the low bits first keeps ~/ identical to >> for negative sums.
+    final divisor = 1 << qlpShift;
+    final lowMask = divisor - 1;
     for (var i = order; i < blockSize; i++) {
       var sum = 0;
       for (var j = 0; j < order; j++) {
         sum += coefficients[j] * samples[i - j - 1];
       }
-      samples[i] += sum >> qlpShift;
+      samples[i] += (sum - (sum & lowMask)) ~/ divisor;
     }
   }
 

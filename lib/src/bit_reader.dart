@@ -123,9 +123,14 @@ class BitReader {
   int readRice(int k) {
     final msbs = readUnary();
     final lsbs = readBits(k);
-    final uval = (msbs << k) | lsbs;
+    // * and + rather than << and |, and ~/ for the zigzag decode: a side
+    // channel of a 32-bit stream carries 33-bit residuals, which exceed
+    // the unsigned 32-bit range JavaScript bitwise operators canonicalise
+    // to on the web.
+    final uval = msbs * (1 << k) + lsbs;
+    final half = uval ~/ 2;
     // Zigzag decode: even -> positive, odd -> negative
-    return (uval >> 1) ^ -(uval & 1);
+    return uval.isEven ? half : -half - 1;
   }
 
   /// Reads a UTF-8 coded number as used in FLAC frame headers.
