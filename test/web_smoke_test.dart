@@ -14,6 +14,8 @@ import 'dart:typed_data';
 import 'package:dart_flac/dart_flac.dart';
 import 'package:test/test.dart';
 
+import 'support/synthetic_frames.dart';
+
 /// Minimal valid FLAC (see test/dart_flac_test.dart for the annotated
 /// byte layout). Two frames of 4 stereo 16-bit samples each.
 final Uint8List _minimalFlac = Uint8List.fromList([
@@ -53,5 +55,76 @@ void main() {
     expect(pcm[1], equals(0x03));
     expect(pcm[2], equals(0x0C));
     expect(pcm[3], equals(0xFE));
+  });
+
+  // The tests below exercise decoder arithmetic outside the range that
+  // JavaScript bitwise operators can represent (dart2js canonicalises
+  // bitwise results to unsigned 32-bit, so the danger zone is values at
+  // or above 2^32, or below -2^31). The VM handles these natively; they
+  // only fail when compiled to JavaScript.
+
+  test('mid/side decorrelation is exact for large negative samples', () {
+    // right < -2^30 makes the doubled value in the side reconstruction
+    // cross -2^31, where a JavaScript arithmetic shift wraps.
+    final left = 0;
+    final right = -(pow2(30) + 1);
+    final mid = -(pow2(29) + 1); // (left + right) >> 1, floored
+    final side = left - right;
+    final bytes = buildFlacFromStreamInfoAndFrames(
+      sampleRate: 44100,
+      channels: 2,
+      bitsPerSample: 32,
+      totalSamples: 4,
+      frames: [buildConstantMidSideFrame32(mid: mid, side: side, blockSize: 4)],
+    );
+    final frame = FlacReader.fromBytes(bytes).decodeFrames().single;
+    expect(frame.channelSamples[0], everyElement(equals(left)));
+    expect(frame.channelSamples[1], everyElement(equals(right)));
+  });
+
+  test('LPC prediction is exact when the accumulator crosses -2^31', () {
+    // warm-up -(2^30)-1, coefficient 2, shift 1: every predicted sample is
+    // (2 * previous) >> 1 = previous, but the intermediate sum is below
+    // -2^31 where a JavaScript arithmetic shift wraps.
+    final warmUp = -(pow2(30) + 1);
+    final bytes = buildFlacFromStreamInfoAndFrames(
+      sampleRate: 44100,
+      channels: 1,
+      bitsPerSample: 32,
+      totalSamples: 4,
+      frames: [
+        buildLpcMonoFrame32(
+            warmUp: warmUp, coefficient: 2, shift: 1, blockSize: 4),
+      ],
+    );
+    final frame = FlacReader.fromBytes(bytes).decodeFrames().single;
+    expect(frame.channelSamples[0], everyElement(equals(warmUp)));
+  });
+
+  test('Rice2 side-channel residuals beyond 2^32 decode exactly', () {
+    // A 33-bit side sample zigzag-encodes to 2^32 + 10, past the unsigned
+    // 32-bit ceiling of JavaScript bitwise operators.
+    final left = pow2(31) - 1;
+    final side = pow2(31) + 5;
+    final bytes = buildFlacFromStreamInfoAndFrames(
+      sampleRate: 44100,
+      channels: 2,
+      bitsPerSample: 32,
+      totalSamples: 2,
+      frames: [
+        buildLeftSideRice2Frame32(
+            left: left, sideValues: [side, 0], riceParam: 30),
+      ],
+    );
+    final frame = FlacReader.fromBytes(bytes).decodeFrames().single;
+    expect(frame.channelSamples[0], equals([left, left]));
+    expect(frame.channelSamples[1], equals([left - side, left]));
+  });
+
+  test('PICTURE dimensions with the high bit set parse as unsigned', () {
+    final bytes = buildFlacWithPicture(width: 0x90000000, height: 1);
+    final reader = FlacReader.fromBytes(bytes);
+    expect(reader.pictures.single.width, equals(0x90000000));
+    expect(reader.pictures.single.height, equals(1));
   });
 }

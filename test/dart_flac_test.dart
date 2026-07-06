@@ -367,6 +367,30 @@ void main() {
       expect(r.readUnary(), equals(4));
     });
 
+    test('reads unary code crossing byte boundaries', () {
+      // 0b1010_0000 0b0000_0000 0b0000_1000: after a 3-bit read the next
+      // 17 bits are zero, then the stop bit.
+      final r = BitReader(Uint8List.fromList([0xA0, 0x00, 0x08]));
+      expect(r.readBits(3), equals(5));
+      expect(r.readUnary(), equals(17));
+      // The reader sits right after the stop bit.
+      expect(r.readBits(3), equals(0));
+    });
+
+    test('reads consecutive unary codes within one byte', () {
+      // 0b10100110 → unary values 0, 1, 2, 0.
+      final r = BitReader(Uint8List.fromList([0xA6]));
+      expect(r.readUnary(), equals(0));
+      expect(r.readUnary(), equals(1));
+      expect(r.readUnary(), equals(2));
+      expect(r.readUnary(), equals(0));
+    });
+
+    test('unary code hitting end of data throws StateError', () {
+      final r = BitReader(Uint8List.fromList([0x00]));
+      expect(() => r.readUnary(), throwsStateError);
+    });
+
     test('reads Rice-coded value', () {
       // Rice(2): value = 3 → zigzag = 6 = 0b110
       // unary(6>>2=1) + binary(6 & 3 = 2, 2 bits) = 0 1 10 = 0b0110
@@ -796,6 +820,140 @@ void main() {
       expect(() => FlacReader.fromBytes(bytes), throwsFormatException);
     });
 
+    test('rejects VORBIS_COMMENT vendor length beyond block', () {
+      // Vendor length 255, but the block ends after the length field.
+      final data = Uint8List.fromList([0xFF, 0x00, 0x00, 0x00]);
+      final bytes = _buildFlacWithBlock(BlockType.vorbisComment, true, data);
+      expect(() => FlacReader.fromBytes(bytes), throwsFormatException);
+    });
+
+    test('rejects VORBIS_COMMENT comment count beyond block', () {
+      // Vendor length 0, then a huge comment count with no comment data.
+      final data = Uint8List.fromList([0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0x7F]);
+      final bytes = _buildFlacWithBlock(BlockType.vorbisComment, true, data);
+      expect(() => FlacReader.fromBytes(bytes), throwsFormatException);
+    });
+
+    test('rejects VORBIS_COMMENT comment length beyond block', () {
+      final data = Uint8List.fromList([
+        0, 0, 0, 0, // vendor length 0
+        1, 0, 0, 0, // one comment
+        0xFF, 0xFF, 0x00, 0x00, // comment length 65535, but no data follows
+      ]);
+      final bytes = _buildFlacWithBlock(BlockType.vorbisComment, true, data);
+      expect(() => FlacReader.fromBytes(bytes), throwsFormatException);
+    });
+
+    test('rejects PICTURE MIME length beyond block', () {
+      final data = Uint8List.fromList([
+        0, 0, 0, 3, // picture type: cover (front)
+        0, 0, 0x03, 0xE8, // MIME length 1000, but the block ends here
+      ]);
+      final bytes = _buildFlacWithBlock(BlockType.picture, true, data);
+      expect(() => FlacReader.fromBytes(bytes), throwsFormatException);
+    });
+
+    test('rejects PICTURE data length beyond block', () {
+      final data = Uint8List.fromList([
+        0, 0, 0, 3, // picture type
+        0, 0, 0, 0, // MIME length 0
+        0, 0, 0, 0, // description length 0
+        0, 0, 0, 0, // width
+        0, 0, 0, 0, // height
+        0, 0, 0, 0, // colour depth
+        0, 0, 0, 0, // colours used
+        0, 0, 0, 99, // picture data length 99, but no data follows
+      ]);
+      final bytes = _buildFlacWithBlock(BlockType.picture, true, data);
+      expect(() => FlacReader.fromBytes(bytes), throwsFormatException);
+    });
+
+    test('rejects truncated CUESHEET block', () {
+      final bytes =
+          _buildFlacWithBlock(BlockType.cueSheet, true, Uint8List(10));
+      expect(() => FlacReader.fromBytes(bytes), throwsFormatException);
+    });
+
+    test('rejects CUESHEET track data beyond block', () {
+      final data = Uint8List(396); // exactly the fixed-size prefix
+      data[395] = 5; // five tracks declared, but the block ends here
+      final bytes = _buildFlacWithBlock(BlockType.cueSheet, true, data);
+      expect(() => FlacReader.fromBytes(bytes), throwsFormatException);
+    });
+
+    test('rejects negative LPC shift', () {
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 1,
+        bitsPerSample: 16,
+        totalSamples: 4,
+        frames: [_buildLpcMonoFrame(blockSize: 4, qlpShift: -1)],
+      );
+      expect(() => FlacReader.fromBytes(bytes).decodeFrames(),
+          throwsFormatException);
+    });
+
+    test('rejects Rice partition order that does not divide the block size',
+        () {
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 1,
+        bitsPerSample: 16,
+        totalSamples: 6,
+        frames: [
+          _buildFixedPartitionedMonoFrame(
+              blockSize: 6, order: 0, partitionOrder: 2),
+        ],
+      );
+      expect(() => FlacReader.fromBytes(bytes).decodeFrames(),
+          throwsFormatException);
+    });
+
+    test('rejects Rice partition order that leaves partition 0 no samples', () {
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 1,
+        bitsPerSample: 16,
+        totalSamples: 8,
+        frames: [
+          _buildFixedPartitionedMonoFrame(
+              blockSize: 8, order: 4, partitionOrder: 2),
+        ],
+      );
+      expect(() => FlacReader.fromBytes(bytes).decodeFrames(),
+          throwsFormatException);
+    });
+
+    test('rejects non-zero reserved bit after the sync code', () {
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 1,
+        bitsPerSample: 16,
+        totalSamples: 4,
+        frames: [
+          _buildConstantMonoFrame(
+              value: 1, blockSize: 4, bitsPerSample: 16, reservedBit1: 1),
+        ],
+      );
+      expect(() => FlacReader.fromBytes(bytes).decodeFrames(),
+          throwsFormatException);
+    });
+
+    test('rejects non-zero reserved bit after the sample-size field', () {
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 1,
+        bitsPerSample: 16,
+        totalSamples: 4,
+        frames: [
+          _buildConstantMonoFrame(
+              value: 1, blockSize: 4, bitsPerSample: 16, reservedBit2: 1),
+        ],
+      );
+      expect(() => FlacReader.fromBytes(bytes).decodeFrames(),
+          throwsFormatException);
+    });
+
     test('parses ID3v2 tag that declares a footer', () {
       final bytes = Uint8List.fromList([
         0x49, 0x44, 0x33, // "ID3"
@@ -1135,6 +1293,34 @@ void main() {
     });
   });
 
+  group('Fixture: mono 16-bit noise (VERBATIM subframes)', () {
+    late FlacReader reader;
+    late Uint8List expectedPcm;
+
+    setUp(() {
+      reader = FlacReader.fromFileSync('test/fixtures/noise_16_44100.flac');
+      expectedPcm = File('test/fixtures/noise_16_44100.pcm').readAsBytesSync();
+    });
+
+    test('STREAMINFO', () {
+      expect(reader.streamInfo.sampleRate, equals(44100));
+      expect(reader.streamInfo.channels, equals(1));
+      expect(reader.streamInfo.bitsPerSample, equals(16));
+      expect(reader.streamInfo.totalSamples, equals(256));
+    });
+
+    test('decoded PCM matches encoder input', () {
+      final samples = reader.decodeInterleavedSamples();
+      expect(samples.length, equals(256));
+      final decodedPcm = _samplesToLePcm(samples, 16);
+      expect(decodedPcm, equals(expectedPcm));
+    });
+
+    test('MD5 verification passes', () {
+      expect(reader.verifyMd5(), equals(Md5VerificationResult.match));
+    });
+  });
+
   // -------------------------------------------------------------------------
   // Hand-built fixtures for the remaining features. These use only CONSTANT
   // subframes so the byte layout is small and easy to reason about.
@@ -1385,6 +1571,56 @@ void main() {
       );
       final frame = FlacReader.fromBytes(bytes).decodeFrames().single;
       expect(frame.channelSamples[0], everyElement(equals(0)));
+    });
+  });
+
+  group('Uncommon subframe and frame paths', () {
+    test('VERBATIM subframe stores samples raw', () {
+      final samples = [1000, -1000, 12345, -12345];
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 1,
+        bitsPerSample: 16,
+        totalSamples: 4,
+        frames: [
+          _buildVerbatimMonoFrame(samples: samples, bitsPerSample: 16),
+        ],
+      );
+      final frame = FlacReader.fromBytes(bytes).decodeFrames().single;
+      expect(frame.channelSamples[0], equals(samples));
+    });
+
+    test('Rice2 (5-bit parameter) residual coding decodes', () {
+      final values = [5, -3, 0, 7];
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 1,
+        bitsPerSample: 16,
+        totalSamples: 4,
+        frames: [
+          _buildFixedRice2MonoFrame(values: values, riceParam: 3),
+        ],
+      );
+      final frame = FlacReader.fromBytes(bytes).decodeFrames().single;
+      expect(frame.channelSamples[0], equals(values));
+    });
+
+    test('variable-blocksize frame carries a UTF-8 coded sample number', () {
+      final bytes = _buildFlacFromStreamInfoAndFrames(
+        sampleRate: 44100,
+        channels: 1,
+        bitsPerSample: 16,
+        totalSamples: 4,
+        frames: [
+          _buildVariableConstantMonoFrame(
+              sampleNumber: 320, value: 7, blockSize: 4),
+        ],
+      );
+      final frame = FlacReader.fromBytes(bytes).decodeFrames().single;
+      expect(frame.header.blockingStrategy,
+          equals(BlockingStrategy.variableBlocksize));
+      expect(frame.header.number, equals(320));
+      expect(frame.channelSamples[0], everyElement(equals(7)));
     });
   });
 
@@ -1936,20 +2172,25 @@ List<int> _buildConstantStereoFrame({
 }
 
 /// Builds a single mono frame with one CONSTANT subframe.
+///
+/// [reservedBit1] and [reservedBit2] override the two mandatory-zero
+/// reserved header bits, for malformed-input tests.
 List<int> _buildConstantMonoFrame({
   required int value,
   required int blockSize,
   required int bitsPerSample,
+  int reservedBit1 = 0,
+  int reservedBit2 = 0,
 }) {
   final bw = _BitWriter();
   bw.writeBits(0x3FFE, 14); // sync
-  bw.writeBit(0); // reserved
+  bw.writeBit(reservedBit1); // reserved
   bw.writeBit(0); // fixed blocksize
   bw.writeBits(0x7, 4); // 16-bit follow-up blocksize
   bw.writeBits(0x9, 4); // 44100
   bw.writeBits(0, 4); // independent, 1 channel
   bw.writeBits(_sampleSizeCode(bitsPerSample), 3);
-  bw.writeBit(0); // reserved
+  bw.writeBit(reservedBit2); // reserved
   bw.writeBits(0x00, 8); // UTF-8 frame number 0
   bw.writeBits(blockSize - 1, 16);
   bw.alignToByte();
@@ -2068,6 +2309,231 @@ List<int> _buildFixedEscapeMonoFrame({
   final body = bw2.toBytes();
   final crc16 = _crc16(body);
   return [...body, (crc16 >> 8) & 0xFF, crc16 & 0xFF];
+}
+
+/// Builds a mono 16-bit frame with a single LPC order-1 subframe whose
+/// quantised shift is [qlpShift]. Residuals are Rice-coded zeros.
+List<int> _buildLpcMonoFrame({
+  required int blockSize,
+  required int qlpShift,
+}) {
+  final bw = _BitWriter();
+  bw.writeBits(0x3FFE, 14); // sync
+  bw.writeBit(0); // reserved
+  bw.writeBit(0); // fixed blocksize
+  bw.writeBits(0x7, 4); // 16-bit follow-up blocksize
+  bw.writeBits(0x9, 4); // 44100
+  bw.writeBits(0, 4); // independent, 1 channel
+  bw.writeBits(0x4, 3); // 16-bit
+  bw.writeBit(0); // reserved
+  bw.writeBits(0x00, 8); // UTF-8 frame number 0
+  bw.writeBits(blockSize - 1, 16);
+  bw.alignToByte();
+  final hdr = bw.toBytes();
+  final bw2 = _BitWriter()
+    ..writeAllBytes(hdr)
+    ..writeBits(_crc8(hdr), 8);
+
+  // Subframe header: LPC order 1 (type code 0b100000), no wasted bits.
+  bw2.writeBit(0);
+  bw2.writeBits(0x20, 6);
+  bw2.writeBit(0);
+  // Warm-up sample.
+  bw2.writeSignedBits(0, 16);
+  // Precision-1 (4 bits), then the signed 5-bit shift.
+  bw2.writeBits(3, 4);
+  bw2.writeSignedBits(qlpShift, 5);
+  // One coefficient at 4-bit precision.
+  bw2.writeSignedBits(1, 4);
+  // Residual: Rice method 0, partition order 0, parameter 0; each zero
+  // residual is a single stop bit.
+  bw2.writeBits(0, 2);
+  bw2.writeBits(0, 4);
+  bw2.writeBits(0, 4);
+  for (var i = 0; i < blockSize - 1; i++) {
+    bw2.writeBit(1);
+  }
+
+  bw2.alignToByte();
+  final body = bw2.toBytes();
+  final crc16 = _crc16(body);
+  return [...body, (crc16 >> 8) & 0xFF, crc16 & 0xFF];
+}
+
+/// Builds a mono 16-bit frame with a single FIXED subframe of [order] whose
+/// residual declares [partitionOrder]; every partition is a 0-bit escape,
+/// so the frame carries no residual data.
+List<int> _buildFixedPartitionedMonoFrame({
+  required int blockSize,
+  required int order,
+  required int partitionOrder,
+}) {
+  final bw = _BitWriter();
+  bw.writeBits(0x3FFE, 14); // sync
+  bw.writeBit(0); // reserved
+  bw.writeBit(0); // fixed blocksize
+  bw.writeBits(0x7, 4); // 16-bit follow-up blocksize
+  bw.writeBits(0x9, 4); // 44100
+  bw.writeBits(0, 4); // independent, 1 channel
+  bw.writeBits(0x4, 3); // 16-bit
+  bw.writeBit(0); // reserved
+  bw.writeBits(0x00, 8); // UTF-8 frame number 0
+  bw.writeBits(blockSize - 1, 16);
+  bw.alignToByte();
+  final hdr = bw.toBytes();
+  final bw2 = _BitWriter()
+    ..writeAllBytes(hdr)
+    ..writeBits(_crc8(hdr), 8);
+
+  // Subframe header: FIXED of [order] (type code 0b001000 | order).
+  bw2.writeBit(0);
+  bw2.writeBits(8 | order, 6);
+  bw2.writeBit(0);
+  for (var i = 0; i < order; i++) {
+    bw2.writeSignedBits(0, 16); // warm-up samples
+  }
+  // Residual: Rice method 0 with the requested partition order.
+  bw2.writeBits(0, 2);
+  bw2.writeBits(partitionOrder, 4);
+  for (var p = 0; p < (1 << partitionOrder); p++) {
+    bw2.writeBits(0xF, 4); // escape code
+    bw2.writeBits(0, 5); // 0-bit residuals
+  }
+
+  bw2.alignToByte();
+  final body = bw2.toBytes();
+  final crc16 = _crc16(body);
+  return [...body, (crc16 >> 8) & 0xFF, crc16 & 0xFF];
+}
+
+/// Builds a mono frame with one VERBATIM subframe storing [samples] raw.
+List<int> _buildVerbatimMonoFrame({
+  required List<int> samples,
+  required int bitsPerSample,
+}) {
+  final bw = _BitWriter();
+  bw.writeBits(0x3FFE, 14); // sync
+  bw.writeBit(0); // reserved
+  bw.writeBit(0); // fixed blocksize
+  bw.writeBits(0x7, 4); // 16-bit follow-up blocksize
+  bw.writeBits(0x9, 4); // 44100
+  bw.writeBits(0, 4); // independent, 1 channel
+  bw.writeBits(_sampleSizeCode(bitsPerSample), 3);
+  bw.writeBit(0); // reserved
+  bw.writeBits(0x00, 8); // UTF-8 frame number 0
+  bw.writeBits(samples.length - 1, 16);
+  bw.alignToByte();
+  final hdr = bw.toBytes();
+  final bw2 = _BitWriter()
+    ..writeAllBytes(hdr)
+    ..writeBits(_crc8(hdr), 8);
+
+  // Subframe header: VERBATIM (type code 1), no wasted bits.
+  bw2.writeBit(0);
+  bw2.writeBits(1, 6);
+  bw2.writeBit(0);
+  for (final s in samples) {
+    bw2.writeSignedBits(s, bitsPerSample);
+  }
+
+  bw2.alignToByte();
+  final body = bw2.toBytes();
+  final crc16 = _crc16(body);
+  return [...body, (crc16 >> 8) & 0xFF, crc16 & 0xFF];
+}
+
+/// Builds a mono 16-bit frame with one FIXED order-0 subframe whose
+/// residuals are Rice2-coded (coding method 1) with [riceParam].
+List<int> _buildFixedRice2MonoFrame({
+  required List<int> values,
+  required int riceParam,
+}) {
+  final bw = _BitWriter();
+  bw.writeBits(0x3FFE, 14); // sync
+  bw.writeBit(0); // reserved
+  bw.writeBit(0); // fixed blocksize
+  bw.writeBits(0x7, 4); // 16-bit follow-up blocksize
+  bw.writeBits(0x9, 4); // 44100
+  bw.writeBits(0, 4); // independent, 1 channel
+  bw.writeBits(0x4, 3); // 16-bit
+  bw.writeBit(0); // reserved
+  bw.writeBits(0x00, 8); // UTF-8 frame number 0
+  bw.writeBits(values.length - 1, 16);
+  bw.alignToByte();
+  final hdr = bw.toBytes();
+  final bw2 = _BitWriter()
+    ..writeAllBytes(hdr)
+    ..writeBits(_crc8(hdr), 8);
+
+  // Subframe header: FIXED order 0 (type code 8), no wasted bits.
+  bw2.writeBit(0);
+  bw2.writeBits(8, 6);
+  bw2.writeBit(0);
+  // Residual: Rice method 1 (5-bit parameters), partition order 0.
+  bw2.writeBits(1, 2);
+  bw2.writeBits(0, 4);
+  bw2.writeBits(riceParam, 5);
+  for (final v in values) {
+    // Zigzag encode, then unary msbs + riceParam-bit lsbs.
+    final uval = v >= 0 ? v * 2 : -v * 2 - 1;
+    final msbs = uval >> riceParam;
+    for (var i = 0; i < msbs; i++) {
+      bw2.writeBit(0);
+    }
+    bw2.writeBit(1);
+    bw2.writeBits(uval & ((1 << riceParam) - 1), riceParam);
+  }
+
+  bw2.alignToByte();
+  final body = bw2.toBytes();
+  final crc16 = _crc16(body);
+  return [...body, (crc16 >> 8) & 0xFF, crc16 & 0xFF];
+}
+
+/// Builds a variable-blocksize mono 16-bit frame with one CONSTANT subframe.
+/// The header carries [sampleNumber] as a UTF-8 coded number.
+List<int> _buildVariableConstantMonoFrame({
+  required int sampleNumber,
+  required int value,
+  required int blockSize,
+}) {
+  final bw = _BitWriter();
+  bw.writeBits(0x3FFE, 14); // sync
+  bw.writeBit(0); // reserved
+  bw.writeBit(1); // variable blocksize
+  bw.writeBits(0x7, 4); // 16-bit follow-up blocksize
+  bw.writeBits(0x9, 4); // 44100
+  bw.writeBits(0, 4); // independent, 1 channel
+  bw.writeBits(0x4, 3); // 16-bit
+  bw.writeBit(0); // reserved
+  // UTF-8 coded sample number.
+  for (final b in _utf8CodedNumber(sampleNumber)) {
+    bw.writeBits(b, 8);
+  }
+  bw.writeBits(blockSize - 1, 16);
+  bw.alignToByte();
+  final hdr = bw.toBytes();
+  final bw2 = _BitWriter()
+    ..writeAllBytes(hdr)
+    ..writeBits(_crc8(hdr), 8);
+
+  bw2.writeBit(0); // zero padding
+  bw2.writeBits(0, 6); // CONSTANT
+  bw2.writeBit(0); // no wasted bits
+  bw2.writeSignedBits(value, 16);
+
+  bw2.alignToByte();
+  final body = bw2.toBytes();
+  final crc16 = _crc16(body);
+  return [...body, (crc16 >> 8) & 0xFF, crc16 & 0xFF];
+}
+
+/// Encodes [value] as a FLAC frame-header UTF-8 coded number (1–2 bytes,
+/// enough for the test values used here).
+List<int> _utf8CodedNumber(int value) {
+  if (value < 0x80) return [value];
+  assert(value < 0x800);
+  return [0xC0 | (value >> 6), 0x80 | (value & 0x3F)];
 }
 
 int _sideExtra(int assignment, int channel) {

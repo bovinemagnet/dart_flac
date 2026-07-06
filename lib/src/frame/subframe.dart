@@ -155,8 +155,12 @@ abstract final class SubframeDecoder {
     // Quantised LPC precision (4 bits: precision = value + 1).
     final qlpPrecision = r.readBits(4) + 1;
 
-    // QLP shift (5-bit signed integer).
+    // QLP shift (5-bit signed integer; negative values are forbidden by
+    // RFC 9639).
     final qlpShift = r.readSignedBits(5);
+    if (qlpShift < 0) {
+      throw FormatException('Negative LPC quantisation shift: $qlpShift.');
+    }
 
     // QLP coefficients.
     final coefficients =
@@ -165,13 +169,18 @@ abstract final class SubframeDecoder {
     // Residual.
     _decodeResidual(r, blockSize, order, samples);
 
-    // Apply LPC predictor.
+    // Apply LPC predictor. The accumulator can reach ~2^52, far outside
+    // the range JavaScript bitwise operators handle on the web, so the
+    // arithmetic shift is done as an exact floor division: subtracting
+    // the low bits first keeps ~/ identical to >> for negative sums.
+    final divisor = 1 << qlpShift;
+    final lowMask = divisor - 1;
     for (var i = order; i < blockSize; i++) {
       var sum = 0;
       for (var j = 0; j < order; j++) {
         sum += coefficients[j] * samples[i - j - 1];
       }
-      samples[i] += sum >> qlpShift;
+      samples[i] += (sum - (sum & lowMask)) ~/ divisor;
     }
   }
 
@@ -188,6 +197,15 @@ abstract final class SubframeDecoder {
 
     final partitionOrder = r.readBits(4);
     final partitionCount = 1 << partitionOrder;
+
+    // RFC 9639: the block size must be evenly divisible by the partition
+    // count, and the first partition must hold at least one residual after
+    // the predictor's warm-up samples.
+    if (blockSize % partitionCount != 0 ||
+        (blockSize >> partitionOrder) <= order) {
+      throw FormatException('Invalid Rice partition order $partitionOrder '
+          'for block size $blockSize and predictor order $order.');
+    }
 
     var sampleIndex = order;
     for (var part = 0; part < partitionCount; part++) {

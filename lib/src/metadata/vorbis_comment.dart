@@ -61,19 +61,40 @@ class VorbisCommentBlock extends MetadataBlock {
     var offset = 0;
 
     // Vendor string.
+    if (data.length - offset < 4) {
+      throw const FormatException('VORBIS_COMMENT block truncated: '
+          'missing vendor length field.');
+    }
     final vendorLen = readUint32LE(data, offset);
     offset += 4;
+    if (vendorLen > data.length - offset) {
+      throw FormatException('VORBIS_COMMENT vendor length $vendorLen '
+          'exceeds the ${data.length - offset} bytes remaining in the block.');
+    }
     final vendor = utf8.decode(data.sublist(offset, offset + vendorLen),
         allowMalformed: true);
     offset += vendorLen;
 
     // Comment list.
+    if (data.length - offset < 4) {
+      throw const FormatException('VORBIS_COMMENT block truncated: '
+          'missing comment count field.');
+    }
     final commentCount = readUint32LE(data, offset);
     offset += 4;
     final comments = <String>[];
     for (var i = 0; i < commentCount; i++) {
+      if (data.length - offset < 4) {
+        throw FormatException('VORBIS_COMMENT block truncated: comment $i '
+            'of $commentCount has no length field.');
+      }
       final commentLen = readUint32LE(data, offset);
       offset += 4;
+      if (commentLen > data.length - offset) {
+        throw FormatException('VORBIS_COMMENT comment length $commentLen '
+            'exceeds the ${data.length - offset} bytes remaining in the '
+            'block.');
+      }
       final comment = utf8.decode(data.sublist(offset, offset + commentLen),
           allowMalformed: true);
       offset += commentLen;

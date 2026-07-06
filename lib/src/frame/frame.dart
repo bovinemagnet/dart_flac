@@ -138,7 +138,10 @@ class FrameParser {
           'at offset $offset.');
     }
 
-    r.readBit(); // reserved, must be 0
+    if (r.readBit() != 0) {
+      throw FormatException(
+          'Non-zero reserved bit after frame sync code at offset $offset.');
+    }
     final blockingStrategyBit = r.readBit();
     final blockingStrategy = blockingStrategyBit == 1
         ? BlockingStrategy.variableBlocksize
@@ -148,7 +151,10 @@ class FrameParser {
     final sampleRateBits = r.readBits(4);
     final channelAssignmentBits = r.readBits(4);
     final sampleSizeBits = r.readBits(3);
-    r.readBit(); // reserved, must be 0
+    if (r.readBit() != 0) {
+      throw FormatException('Non-zero reserved bit after sample-size field '
+          'in frame header at offset $offset.');
+    }
 
     // UTF-8 coded frame / sample number.
     final number = r.readUtf8CodedNumber();
@@ -261,7 +267,8 @@ class FrameParser {
     // CRC-8 covers all frame header bytes up to (but not including) the CRC.
     final headerEndOffset = r.bytePosition; // absolute offset in _data
     final headerCrc8 = r.readByte();
-    final computedCrc8 = crc8(_data.sublist(startOffset, headerEndOffset));
+    final computedCrc8 =
+        crc8(Uint8List.sublistView(_data, startOffset, headerEndOffset));
     if (headerCrc8 != computedCrc8) {
       throw FormatException(
           'Frame header CRC-8 mismatch at offset $startOffset: '
@@ -311,7 +318,8 @@ class FrameParser {
     final frameCrc16Hi = r.readByte();
     final frameCrc16Lo = r.readByte();
     final storedCrc16 = (frameCrc16Hi << 8) | frameCrc16Lo;
-    final computedCrc16 = crc16(_data.sublist(startOffset, frameEndOffset));
+    final computedCrc16 =
+        crc16(Uint8List.sublistView(_data, startOffset, frameEndOffset));
     if (storedCrc16 != computedCrc16) {
       throw FormatException('Frame CRC-16 mismatch at offset $startOffset: '
           'expected 0x${computedCrc16.toRadixString(16)}, '
@@ -381,9 +389,14 @@ class FrameParser {
           final mid = raw[0][i];
           final side = raw[1][i];
           // Restore LSB lost by the mid = (left+right)>>1 operation.
-          final m = (mid << 1) | (side & 1);
-          left[i] = (m + side) >> 1;
-          right[i] = (m - side) >> 1;
+          // * and ~/ rather than shifts: the doubled mid and the 33-bit
+          // side push these intermediates outside the range JavaScript
+          // bitwise operators handle on the web. Both sums are always
+          // even (m + side = 2*left, m - side = 2*right), so truncating
+          // division is exact.
+          final m = mid * 2 + (side & 1);
+          left[i] = (m + side) ~/ 2;
+          right[i] = (m - side) ~/ 2;
         }
     }
 

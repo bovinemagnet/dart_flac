@@ -73,23 +73,35 @@ class PictureBlock extends MetadataBlock {
   static PictureBlock parse(bool isLast, int length, Uint8List data) {
     var offset = 0;
 
+    void requireBytes(int count, String field) {
+      if (count > data.length - offset) {
+        throw FormatException('PICTURE block truncated: $field needs $count '
+            'bytes but only ${data.length - offset} remain.');
+      }
+    }
+
+    requireBytes(8, 'picture type and MIME length');
     final pictureType = readUint32BE(data, offset);
     offset += 4;
 
     // MIME type: 32-bit BE length + UTF-8 bytes.
     final mimeLen = readUint32BE(data, offset);
     offset += 4;
+    requireBytes(mimeLen, 'MIME type');
     final mimeType = utf8.decode(data.sublist(offset, offset + mimeLen),
         allowMalformed: true);
     offset += mimeLen;
 
     // Description: 32-bit BE length + UTF-8 bytes.
+    requireBytes(4, 'description length');
     final descLen = readUint32BE(data, offset);
     offset += 4;
+    requireBytes(descLen, 'description');
     final description = utf8.decode(data.sublist(offset, offset + descLen),
         allowMalformed: true);
     offset += descLen;
 
+    requireBytes(20, 'image properties and data length');
     final width = readUint32BE(data, offset);
     offset += 4;
     final height = readUint32BE(data, offset);
@@ -102,6 +114,7 @@ class PictureBlock extends MetadataBlock {
     // Picture data: 32-bit BE length + bytes.
     final dataLen = readUint32BE(data, offset);
     offset += 4;
+    requireBytes(dataLen, 'picture data');
     final pictureData = data.sublist(offset, offset + dataLen);
 
     return PictureBlock(

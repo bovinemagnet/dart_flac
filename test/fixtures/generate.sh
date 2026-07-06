@@ -67,4 +67,21 @@ flac --silent --force --no-preserve-modtime --verify \
      --force-raw-format \
      -o stereo_24_96000.flac stereo_24_96000.pcm
 
+# ---------------------------------------------------------------------------
+# Fixture 4: mono, 16-bit, 44100 Hz. 256 samples of full-scale seeded noise.
+# Incompressible input makes the reference encoder emit VERBATIM subframes.
+# ---------------------------------------------------------------------------
+python3 - <<'PY' > noise_16_44100.pcm
+import random, struct, sys
+random.seed(42)
+for _ in range(256):
+    sys.stdout.buffer.write(struct.pack('<h', random.randint(-32768, 32767)))
+PY
+
+flac --silent --force --no-preserve-modtime --verify \
+     --endian=little --sign=signed --channels=1 --bps=16 --sample-rate=44100 \
+     --force-raw-format \
+     --blocksize=64 -0 \
+     -o noise_16_44100.flac noise_16_44100.pcm
+
 ls -la *.flac *.pcm
