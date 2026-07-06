@@ -14,7 +14,10 @@ export 'src/pcm_output.dart' show frameToInterleavedPcm;
 export 'src/streaming_decoder.dart' show StreamingFlacDecoder;
 export 'src/wav_writer.dart'
     show frameToWavPcmBytes, writeWavBytes, writeWavHeaderBytes;
-export 'src/metadata/metadata_block.dart';
+// Metadata types only: the byte-level read helpers in metadata_block.dart
+// are implementation details shared by the block parsers.
+export 'src/metadata/metadata_block.dart'
+    show BlockType, MetadataBlock, UnknownMetadataBlock, parseMetadataBlock;
 export 'src/metadata/stream_info.dart';
 export 'src/metadata/padding.dart';
 export 'src/metadata/application.dart';

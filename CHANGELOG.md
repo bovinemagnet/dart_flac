@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- Reject malformed metadata and frame fields with `FormatException`.
+  Corrupt length fields in VORBIS_COMMENT, PICTURE, and CUESHEET blocks
+  previously escaped as `RangeError`; a negative LPC quantisation shift
+  threw `ArgumentError`; an invalid Rice partition order either silently
+  mis-filled the sample buffer or threw `IndexError`; and the two
+  mandatory-zero reserved frame-header bits were never checked. All now
+  raise `FormatException`, which also lets the tolerant decode paths
+  (which catch only `FormatException` and `StateError`) resync past them.
+- Keep decoder arithmetic exact beyond 32 bits on the web. The Rice
+  combine/zigzag decode, the LPC accumulator shift, and the mid/side
+  reconstruction used bitwise operators on values that can leave the
+  unsigned 32-bit range dart2js canonicalises to (33-bit side-channel
+  residuals, ~2⁵² LPC sums, doubled mid/side intermediates), silently
+  corrupting high-bit-depth output when compiled to JavaScript.
+- Speed up decoding roughly 15%: `readUnary` (the innermost loop of Rice
+  decoding) now scans a byte at a time via a leading-zeros table, and the
+  frame CRC-8/CRC-16 checks use a zero-copy `Uint8List.sublistView`
+  instead of copying every frame.
+- Narrow the metadata export. `package:dart_flac/dart_flac.dart` did a
+  wholesale `export 'src/metadata/metadata_block.dart'`, which leaked the
+  internal byte-level read helpers (`readUint32LE`, `readUint32BE`,
+  `readUint64BE`, `readUtf8Bytes`, `readLengthPrefixedStringLE`). The
+  export is now `show`-filtered to `BlockType`, `MetadataBlock`,
+  `UnknownMetadataBlock`, and `parseMetadataBlock` — the same treatment
+  0.0.6 gave the frame exports. Breaking only for code that imported the
+  helpers by accident.
 - Fix 32-bit stream decoding. `BitReader.readSignedBits` never
   sign-extended 32-bit reads, and the side channel of a stereo-decorrelated
   32-bit frame is coded at 33 bits — one wider than the reader allowed and
