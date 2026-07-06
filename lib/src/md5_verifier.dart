@@ -23,10 +23,10 @@ enum Md5VerificationResult {
 
 /// Streaming MD5 verifier for FLAC PCM samples.
 ///
-/// Feed the verifier interleaved, little-endian, signed PCM bytes at the
-/// stream's *native* bit depth (the value of [StreamInfoBlock.bitsPerSample],
-/// rounded up to the nearest whole byte) as you decode frames, then call
-/// [finalize] to compare against the signature stored in STREAMINFO.
+/// Feed the verifier the bytes produced by [frameToMd5Pcm] at the stream's
+/// *native* bit depth ([StreamInfoBlock.bitsPerSample]) as you decode
+/// frames, then call [finalize] to compare against the signature stored in
+/// STREAMINFO.
 ///
 /// This avoids the second-pass full decode that the convenience
 /// [FlacReader.verifyMd5] does. It is the right tool when you are already
@@ -39,7 +39,7 @@ enum Md5VerificationResult {
 /// ```dart
 /// final verifier = Md5Verifier.forStreamInfo(reader.streamInfo);
 /// for (final frame in reader.framesLazy()) {
-///   verifier?.addPcm(frameToInterleavedPcm(frame, reader.streamInfo.bitsPerSample));
+///   verifier?.addPcm(frameToMd5Pcm(frame, reader.streamInfo.bitsPerSample));
 ///   // ... write the frame somewhere else too ...
 /// }
 /// final result = verifier?.finalize() ?? Md5VerificationResult.notComputed;
@@ -71,10 +71,11 @@ class Md5Verifier {
   /// Feeds a chunk of native-bit-depth interleaved PCM bytes into the
   /// running MD5.
   ///
-  /// [pcm] must be the bytes produced by [frameToInterleavedPcm] at the
-  /// stream's native bit depth — using a different output bit depth
-  /// produces a different digest and verification will report
-  /// [Md5VerificationResult.mismatch].
+  /// [pcm] must be the bytes produced by [frameToMd5Pcm] at the stream's
+  /// native bit depth — using a different output bit depth (or the
+  /// full-scale-shifted [frameToInterleavedPcm] bytes for a stream whose
+  /// depth is not a multiple of 8) produces a different digest and
+  /// verification will report [Md5VerificationResult.mismatch].
   ///
   /// Throws [StateError] if called after [finalize].
   void addPcm(List<int> pcm) {
@@ -106,18 +107,49 @@ class Md5Verifier {
   }
 }
 
+/// Packs a decoded [frame] into the byte layout the FLAC reference encoder
+/// hashes for STREAMINFO.md5: interleaved samples, each written as-is as a
+/// little-endian signed integer in `ceil(bitsPerSample / 8)` bytes.
+///
+/// Unlike [frameToInterleavedPcm], samples whose bit depth is not a
+/// multiple of 8 are *not* shifted to full scale — a 12-bit sample
+/// occupies 2 bytes holding the raw 12-bit value. For byte-aligned depths
+/// the two functions produce identical output.
+Uint8List frameToMd5Pcm(FlacFrame frame, int bitsPerSample) {
+  final bytesPerSample = (bitsPerSample + 7) ~/ 8;
+  final mask =
+      bytesPerSample == 4 ? 0xFFFFFFFF : (1 << (bytesPerSample * 8)) - 1;
+
+  final blockSize = frame.blockSize;
+  final channels = frame.channelCount;
+  final out = Uint8List(blockSize * channels * bytesPerSample);
+
+  var o = 0;
+  final channelSamples = frame.channelSamples;
+  for (var s = 0; s < blockSize; s++) {
+    for (var c = 0; c < channels; c++) {
+      final v = channelSamples[c][s] & mask;
+      for (var b = 0; b < bytesPerSample; b++) {
+        out[o++] = (v >> (b * 8)) & 0xFF;
+      }
+    }
+  }
+  return out;
+}
+
 /// Computes the MD5 digest of decoded PCM samples, matching the format the
 /// FLAC reference encoder stores in STREAMINFO.md5.
 ///
 /// The reference implementation hashes the *unencoded* interleaved audio
 /// samples, each written as a little-endian signed integer at a byte-aligned
-/// width determined by [bitsPerSample] (rounded up to the next multiple of 8).
-/// Channels are interleaved per inter-channel sample.
+/// width determined by [bitsPerSample] (rounded up to the next multiple of
+/// 8, without shifting the sample values). Channels are interleaved per
+/// inter-channel sample.
 Uint8List computePcmMd5(Iterable<FlacFrame> frames, int bitsPerSample) {
   final digestSink = _DigestSink();
   final sink = md5.startChunkedConversion(digestSink);
   for (final frame in frames) {
-    sink.add(frameToInterleavedPcm(frame, bitsPerSample));
+    sink.add(frameToMd5Pcm(frame, bitsPerSample));
   }
   sink.close();
   return Uint8List.fromList(digestSink.digest!.bytes);

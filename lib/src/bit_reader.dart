@@ -137,8 +137,12 @@ class BitReader {
 
     int extraBytes;
     int value;
-    if ((first & 0xFE) == 0xFC) {
-      // 6-byte sequence → 36-bit number
+    if (first == 0xFE) {
+      // 7-byte sequence → 36-bit number (variable-blocksize sample numbers)
+      extraBytes = 6;
+      value = 0;
+    } else if ((first & 0xFE) == 0xFC) {
+      // 6-byte sequence → 31-bit number
       extraBytes = 5;
       value = first & 0x01;
     } else if ((first & 0xFC) == 0xF8) {
@@ -167,7 +171,9 @@ class BitReader {
         throw FormatException('Invalid UTF-8 continuation byte: '
             '0x${b.toRadixString(16)}');
       }
-      value = (value << 6) | (b & 0x3F);
+      // * and + rather than << and |: a 36-bit value would be truncated
+      // by the shift on the web, where bitwise operators wrap at 32 bits.
+      value = value * 64 + (b & 0x3F);
     }
     return value;
   }
