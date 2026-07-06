@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.0.7 — 2026-07-06
 
 - Reject malformed metadata and frame fields with `FormatException`.
   Corrupt length fields in VORBIS_COMMENT, PICTURE, and CUESHEET blocks
@@ -64,6 +64,12 @@
   `addBytes` and left the decoder stuck re-throwing at the same offset.
   Corrupt frames are now reported as error events on the `frames`
   stream, and decoding resumes at the next frame sync code.
+- Expand test coverage: VERBATIM subframes, Rice2 (5-bit parameter)
+  residual coding, and variable-blocksize frames with UTF-8 coded sample
+  numbers now have synthetic-frame tests; a fourth real fixture (seeded
+  noise, stored by the reference encoder as VERBATIM subframes) and
+  browser regression tests for the beyond-32-bit arithmetic paths back
+  them up.
 
 ## 0.0.6 — 2026-05-17
 
