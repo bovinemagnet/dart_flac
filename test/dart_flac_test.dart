@@ -1321,6 +1321,91 @@ void main() {
     });
   });
 
+  group('Fixture: stereo 20-bit 44100 Hz', () {
+    late FlacReader reader;
+    late Uint8List expectedPcm;
+
+    setUp(() {
+      reader = FlacReader.fromFileSync('test/fixtures/stereo_20_44100.flac');
+      expectedPcm = File('test/fixtures/stereo_20_44100.pcm').readAsBytesSync();
+    });
+
+    test('STREAMINFO', () {
+      expect(reader.streamInfo.sampleRate, equals(44100));
+      expect(reader.streamInfo.channels, equals(2));
+      expect(reader.streamInfo.bitsPerSample, equals(20));
+      expect(reader.streamInfo.totalSamples, equals(256));
+    });
+
+    test('decoded PCM matches encoder input', () {
+      final samples = reader.decodeInterleavedSamples();
+      expect(samples.length, equals(512)); // 256 × 2 channels
+      final decodedPcm = _samplesToLePcm(samples, 20);
+      expect(decodedPcm, equals(expectedPcm));
+    });
+
+    test('MD5 verification passes', () {
+      expect(reader.verifyMd5(), equals(Md5VerificationResult.match));
+    });
+  });
+
+  group('Fixture: 5.1 surround 16-bit 44100 Hz', () {
+    late FlacReader reader;
+    late Uint8List expectedPcm;
+
+    setUp(() {
+      reader = FlacReader.fromFileSync('test/fixtures/surround_16_44100.flac');
+      expectedPcm =
+          File('test/fixtures/surround_16_44100.pcm').readAsBytesSync();
+    });
+
+    test('STREAMINFO', () {
+      expect(reader.streamInfo.sampleRate, equals(44100));
+      expect(reader.streamInfo.channels, equals(6));
+      expect(reader.streamInfo.bitsPerSample, equals(16));
+      expect(reader.streamInfo.totalSamples, equals(256));
+    });
+
+    test('decoded PCM matches encoder input', () {
+      final samples = reader.decodeInterleavedSamples();
+      expect(samples.length, equals(1536)); // 256 × 6 channels
+      final decodedPcm = _samplesToLePcm(samples, 16);
+      expect(decodedPcm, equals(expectedPcm));
+    });
+
+    test('MD5 verification passes', () {
+      expect(reader.verifyMd5(), equals(Md5VerificationResult.match));
+    });
+  });
+
+  group('Fixture: mono 32-bit 48000 Hz', () {
+    late FlacReader reader;
+    late Uint8List expectedPcm;
+
+    setUp(() {
+      reader = FlacReader.fromFileSync('test/fixtures/mono_32_48000.flac');
+      expectedPcm = File('test/fixtures/mono_32_48000.pcm').readAsBytesSync();
+    });
+
+    test('STREAMINFO', () {
+      expect(reader.streamInfo.sampleRate, equals(48000));
+      expect(reader.streamInfo.channels, equals(1));
+      expect(reader.streamInfo.bitsPerSample, equals(32));
+      expect(reader.streamInfo.totalSamples, equals(256));
+    });
+
+    test('decoded PCM matches encoder input', () {
+      final samples = reader.decodeInterleavedSamples();
+      expect(samples.length, equals(256));
+      final decodedPcm = _samplesToLePcm(samples, 32);
+      expect(decodedPcm, equals(expectedPcm));
+    });
+
+    test('MD5 verification passes', () {
+      expect(reader.verifyMd5(), equals(Md5VerificationResult.match));
+    });
+  });
+
   // -------------------------------------------------------------------------
   // Hand-built fixtures for the remaining features. These use only CONSTANT
   // subframes so the byte layout is small and easy to reason about.
