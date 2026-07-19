@@ -51,7 +51,8 @@ else
     mkdir -p "$(dirname "$out")"
     url="https://raw.githubusercontent.com/ietf-wg-cellar/flac-test-files/$SHA/${path// /%20}"
     echo "Fetching $path"
-    curl -fsSL -o "$out" "$url"
+    curl -fsSL -o "$out.tmp" "$url"
+    mv "$out.tmp" "$out"
   done
   echo "Curated conformance files present in $DEST."
 fi

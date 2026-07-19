@@ -62,6 +62,23 @@ void main() {
     return;
   }
 
+  // fullSetPresent keys off a single sentinel file; guard against a partial
+  // fetch (or a future testbench revision that renames it) silently skipping
+  // the whole sweep by asserting the subset directory is fully populated.
+  final subsetCount = Directory('$conformanceDir/subset')
+      .listSync()
+      .whereType<File>()
+      .where((f) => f.path.endsWith('.flac'))
+      .length;
+  if (subsetCount < 64) {
+    test('full testbench appears incomplete', () {
+      fail('Expected >=64 subset files but found $subsetCount. Re-run '
+          'tool/fetch_conformance.sh --full (the pinned testbench may have '
+          'changed — re-triage the baseline maps).');
+    });
+    return;
+  }
+
   group('CELLAR sweep: subset', () {
     for (final name in _flacFiles('subset')) {
       test(name, () {
