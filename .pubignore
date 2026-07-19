@@ -5,6 +5,8 @@
 AGENTS.md
 CLAUDE.md
 .github/
+# Internal design specs and implementation plans (published docs live in src/docs)
+docs/
 
 # Pub / Dart toolchain artefacts
 .dart_tool/

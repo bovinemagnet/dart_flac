@@ -175,6 +175,21 @@ rates, channel layouts, or malformed stream behavior. Keep small parser
 edge cases inline in tests so the byte layout stays visible next to the
 assertions.
 
+Conformance tests against the official [IETF CELLAR FLAC testbench](https://github.com/ietf-wg-cellar/flac-test-files)
+(CC0) are tagged and self-skip unless the files have been fetched:
+
+```sh
+./tool/fetch_conformance.sh            # curated set (~12 MB)
+dart test -t conformance
+
+./tool/fetch_conformance.sh --full     # complete testbench (~201 MB)
+dart test -t conformance-full
+```
+
+The curated set runs in CI on every pull request; the full sweep is a
+manually triggered workflow (Actions → "Conformance (full testbench)").
+Downloads land in `test/fixtures/conformance/`, which is gitignored.
+
 ## Platforms
 
 Pure Dart, no FFI, no conditional compilation. Runs on the Dart VM

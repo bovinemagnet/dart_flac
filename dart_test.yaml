@@ -1,0 +1,6 @@
+tags:
+  # Needs the curated CELLAR files: tool/fetch_conformance.sh (~12 MB).
+  # Tests self-skip when the files are absent.
+  conformance:
+  # Needs the complete testbench: tool/fetch_conformance.sh --full (~201 MB).
+  conformance-full:

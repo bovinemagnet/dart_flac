@@ -52,3 +52,33 @@ jobs:
 
       - name: Validate package
         run: dart pub publish --dry-run
+
+  conformance:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          # Keep in lockstep with the `test` job's pin.
+          sdk: 3.11.5
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Cache curated CELLAR files
+        uses: actions/cache@v4
+        with:
+          path: test/fixtures/conformance
+          # Keep in lockstep with SHA in tool/fetch_conformance.sh.
+          key: cellar-curated-aa7b0c6cf32994c106ae517a08134c28a96ff5b2
+
+      - name: Fetch curated CELLAR files
+        # No-op on cache hit (the script skips files already present).
+        run: ./tool/fetch_conformance.sh
+
+      - name: Conformance tests
+        run: dart test -t conformance

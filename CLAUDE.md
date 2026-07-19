@@ -17,6 +17,10 @@ dart test                             # run the full test suite
 dart test test/dart_flac_test.dart    # run a single test file
 dart test --name 'reads Rice-coded'   # run a single test by name substring
 dart format .                         # format the codebase
+./tool/fetch_conformance.sh           # fetch curated CELLAR conformance files (~12 MB)
+dart test -t conformance              # conformance tests (self-skip if not fetched)
+./tool/fetch_conformance.sh --full    # fetch complete testbench (~201 MB)
+dart test -t conformance-full         # whole-testbench sweep
 ```
 
 There is no build step — this is a pub package, not an executable. `pubspec.lock` is gitignored.

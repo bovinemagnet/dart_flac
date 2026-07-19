@@ -1,0 +1,30 @@
+name: Conformance (full testbench)
+
+# Manual only: downloads the complete ~201 MB CELLAR testbench and runs the
+# whole-testbench sweep. Trigger from the Actions tab when validating decoder
+# changes or bumping the pinned testbench SHA.
+on:
+  workflow_dispatch:
+
+jobs:
+  conformance-full:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          # Keep in lockstep with ci.yml's pin.
+          sdk: 3.11.5
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Fetch full CELLAR testbench
+        run: ./tool/fetch_conformance.sh --full
+
+      - name: Full testbench sweep
+        run: dart test -t conformance-full
