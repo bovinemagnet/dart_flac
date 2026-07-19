@@ -30,6 +30,12 @@ under ~10 KB):
 | `surround_16_44100` | 6-channel / 5.1 (no current multichannel coverage) |
 | `mono_32_48000` | 32-bit samples (flac ≥ 1.4) |
 
+The `flac` CLI only accepts 8/16/24/32-bit raw input, so the 20-bit fixture is
+fed to the encoder as a generated `WAVE_FORMAT_EXTENSIBLE` WAV with
+`wValidBitsPerSample = 20` (verified against flac 1.5.0); its committed `.pcm`
+reference holds the right-justified 20-bit values packed 3 bytes
+little-endian, matching the decoder's output convention.
+
 Each fixture gets end-to-end tests in `test/dart_flac_test.dart` following the
 existing pattern: decode, byte-compare against the reference `.pcm`, and
 `verifyMd5` must return `match`. These run on every `dart test` with zero
@@ -67,22 +73,33 @@ A curated ten-file slice of the official testbench, ~12 MB total:
   instead of a YAML sidecar.
 - **Valid files:** parse → assert STREAMINFO properties against the manifest →
   `decodeFrames()` → `verifyMd5` must return `match`.
-- **Faulty files:** must fail by throwing `FlacException` — never a
+- **Faulty files:** must fail by throwing `FormatException` (the decoder's
+  established error contract — there is no custom exception type) — never a
   `RangeError`, hang, or silently wrong output.
 
 ### Tier 3 — full testbench sweep (`dart test -t conformance-full`)
 
-A second group in the same test file, tagged `conformance-full`, that globs
-whatever is present under the conformance directory:
+A separate `test/conformance_full_test.dart`, tagged `conformance-full`, that
+globs whatever is present under the conformance directory.
 
-- `subset/` (67 files) and `uncommon/` (11 files): parse, decode, `verifyMd5`
-  must return `match` (or `notComputed` where the stream carries no MD5).
-- `faulty/` (11 files): must fail cleanly with `FlacException`.
+A probe of the current decoder against the full testbench (2026-07-19,
+commit `aa7b0c6`) showed it **already passes everything**, so the sweep locks
+in that baseline rather than hunting for gaps:
 
-Known-unsupported behaviours discovered by the sweep (likely candidates:
-`uncommon/01–04` mid-stream parameter changes, `uncommon/10–11` streams
-starting without metadata) are recorded as explicit skip entries with a
-reason and a linked issue — the sweep is not weakened to make them pass.
+- `subset/` (64 files): decode with `verifyMd5` == `match` — all pass today.
+- `uncommon/` (11 files): `01–04` (mid-stream parameter changes) decode with
+  `verifyMd5` == `notComputed` (those streams carry no MD5); `05–09` decode
+  with `match`; `10–11` (streams not starting with the `fLaC` marker) are
+  rejected with `FormatException` — a documented capability boundary, encoded
+  as the expected outcome.
+- `faulty/` (11 files): `06`, `07`, `10`, `11` are rejected with
+  `FormatException`; `01`, `02`, `04`, `05`, `08`, `09` decode (the fault is a
+  tolerable STREAMINFO inconsistency) with `match`; `03` (wrong bit depth)
+  decodes with `verifyMd5` == `mismatch`, correctly surfacing the fault. The
+  exact per-file outcome is asserted so any behaviour change is visible.
+
+Files added by a future testbench SHA bump fall back to default rules
+(`subset/` must match; unknown files fail the sweep until triaged).
 
 ## Fetch script — `tool/fetch_conformance.sh`
 
@@ -122,9 +139,8 @@ Download size was a stated concern; the split above resolves it:
    fixtures.
 2. After `tool/fetch_conformance.sh`, `dart test -t conformance` passes: all
    nine valid curated files decode with an MD5 match and the faulty file is
-   rejected with `FlacException`.
+   rejected with `FormatException`.
 3. After `tool/fetch_conformance.sh --full`, `dart test -t conformance-full`
-   runs the whole testbench; every non-passing file is either a genuine
-   decoder gap (filed as an issue and listed as a skip with reason) or a bug
-   fixed under this work.
+   asserts the probed baseline across the whole testbench (all valid files
+   verified, faulty files' exact outcomes locked in).
 4. The `conformance` CI job passes on a PR, using the cache on the second run.
