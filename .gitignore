@@ -34,3 +34,6 @@ coverage/
 # Benchmark fixtures (generated, ~4-40MB)
 benchmark/fixtures/*.flac
 benchmark/fixtures/*.pcm
+
+# Official CELLAR conformance files (fetched by tool/fetch_conformance.sh)
+test/fixtures/conformance/
