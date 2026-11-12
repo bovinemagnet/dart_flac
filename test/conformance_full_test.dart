@@ -19,12 +19,20 @@ const _expectedRejects = {
   'uncommon/11 - file starting with unparsable data.flac',
 };
 
-/// Streams whose parameters change mid-stream carry no STREAMINFO MD5.
+/// Streams whose parameters change mid-stream carry no STREAMINFO MD5, so
+/// verifyMd5() never decodes them. Expected frame and per-channel sample
+/// counts, recorded against testbench commit aa7b0c6.
 const _noMd5 = {
-  'uncommon/01 - changing samplerate.flac',
-  'uncommon/02 - increasing number of channels.flac',
-  'uncommon/03 - decreasing number of channels.flac',
-  'uncommon/04 - changing bitdepth.flac',
+  'uncommon/01 - changing samplerate.flac': (frames: 136, samples: 555747),
+  'uncommon/02 - increasing number of channels.flac': (
+    frames: 156,
+    samples: 638856
+  ),
+  'uncommon/03 - decreasing number of channels.flac': (
+    frames: 92,
+    samples: 375226
+  ),
+  'uncommon/04 - changing bitdepth.flac': (frames: 121, samples: 495232),
 };
 
 /// Exact expected outcome per faulty file: 'reject' means FormatException,
@@ -81,25 +89,33 @@ void main() {
 
   group('CELLAR sweep: subset', () {
     for (final name in _flacFiles('subset')) {
-      test(name, () {
-        expect(verifyFile('$conformanceDir/subset/$name'),
-            equals(Md5VerificationResult.match));
+      test(name, () async {
+        final path = '$conformanceDir/subset/$name';
+        expect(verifyFile(path), equals(Md5VerificationResult.match));
+        expectPathsAgree(await decodeEveryWay(path));
       });
     }
   });
 
   group('CELLAR sweep: uncommon', () {
     for (final name in _flacFiles('uncommon')) {
-      test(name, () {
+      test(name, () async {
+        final path = '$conformanceDir/uncommon/$name';
         if (_expectedRejects.contains('uncommon/$name')) {
-          expect(() => verifyFile('$conformanceDir/uncommon/$name'),
-              throwsFormatException);
-        } else {
-          final expected = _noMd5.contains('uncommon/$name')
-              ? Md5VerificationResult.notComputed
-              : Md5VerificationResult.match;
-          expect(
-              verifyFile('$conformanceDir/uncommon/$name'), equals(expected));
+          expect(() => verifyFile(path), throwsFormatException);
+          return;
+        }
+        final counts = _noMd5['uncommon/$name'];
+        expect(
+            verifyFile(path),
+            equals(counts == null
+                ? Md5VerificationResult.match
+                : Md5VerificationResult.notComputed));
+        final report = await decodeEveryWay(path);
+        expectPathsAgree(report);
+        if (counts != null) {
+          expect(report.frames, equals(counts.frames));
+          expect(report.samplesPerChannel, equals(counts.samples));
         }
       });
     }
@@ -107,16 +123,23 @@ void main() {
 
   group('CELLAR sweep: faulty', () {
     for (final name in _flacFiles('faulty')) {
-      test(name, () {
+      test(name, () async {
+        final path = '$conformanceDir/faulty/$name';
         final expected = _faultyBaseline[name];
         expect(expected, isNotNull,
             reason: 'New faulty file needs a baseline entry: $name');
         if (expected == 'reject') {
-          expect(() => verifyFile('$conformanceDir/faulty/$name'),
-              throwsFormatException);
+          expect(() => verifyFile(path), throwsFormatException);
+          // The streaming decoder has no up-front validation: it may decode
+          // the stream, but any failure must be a FormatException.
+          try {
+            await streamingFingerprint(File(path).readAsBytesSync());
+          } on FormatException {
+            // Rejected cleanly.
+          }
         } else {
-          expect(verifyFile('$conformanceDir/faulty/$name').name,
-              equals(expected));
+          expect(verifyFile(path).name, equals(expected));
+          expectPathsAgree(await decodeEveryWay(path));
         }
       });
     }

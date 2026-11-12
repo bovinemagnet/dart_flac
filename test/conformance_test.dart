@@ -71,6 +71,10 @@ void main() {
           expect(verifyFile('$conformanceDir/${c.path}'),
               equals(Md5VerificationResult.match));
         });
+
+        test('all decode paths agree', () async {
+          expectPathsAgree(await decodeEveryWay('$conformanceDir/${c.path}'));
+        });
       });
     }
 
