@@ -54,15 +54,19 @@ if [[ "$full" == true ]]; then
     echo "Full testbench already present ($SHA)."
     exit 0
   fi
-  mkdir -p "$DEST"
   echo "Downloading full testbench tarball (~201 MB)..."
   # Download to a file before extracting: a retried transfer piped straight
-  # into tar would feed it a duplicated, corrupt stream.
-  tarball="$DEST/.full-$SHA.tar.gz.tmp"
+  # into tar would feed it a duplicated, corrupt stream. The file lives
+  # outside $DEST so a failed download leaves the existing files alone.
+  tarball="$(mktemp)"
+  trap 'rm -f "$tarball"' EXIT
   "${CURL[@]}" -o "$tarball" \
     "https://codeload.github.com/ietf-wg-cellar/flac-test-files/tar.gz/$SHA"
+  # Extract into an empty directory, so files dropped upstream or left by an
+  # interrupted extraction do not linger.
+  rm -rf "$DEST"
+  mkdir -p "$DEST"
   tar -xzf "$tarball" -C "$DEST" --strip-components=1
-  rm "$tarball"
   touch "$marker"
   echo "Extracted full testbench to $DEST."
 else

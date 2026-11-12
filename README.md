@@ -189,6 +189,8 @@ dart test -t conformance-full
 The curated set runs in CI on every pull request; the full sweep is a
 manually triggered workflow (Actions → "Conformance (full testbench)").
 Downloads land in `test/fixtures/conformance/`, which is gitignored.
+Setting `FLAC_CONFORMANCE_REQUIRED=true`, as both workflows do, makes the
+suites fail instead of skipping when the files have not been fetched.
 
 ## Platforms
 

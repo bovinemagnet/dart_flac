@@ -93,6 +93,19 @@ void main() {
     expect(File('$dest/subset/a.flac').readAsStringSync(), equals('upstream'));
   });
 
+  test('full fetch removes files left by another revision', () {
+    File('$dest/subset/dropped upstream.flac')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('stale');
+    File('$dest/.full-0000000').createSync();
+
+    expect(fetch(['--full']).exitCode, equals(0), reason: 'fetch failed');
+    expect(File('$dest/subset/dropped upstream.flac').existsSync(), isFalse);
+    expect(File('$dest/.full-0000000').existsSync(), isFalse);
+    expect(File('$dest/subset/a.flac').readAsStringSync(), equals('upstream'));
+    expect(File('$dest/.full-$_sha').existsSync(), isTrue);
+  });
+
   test('curated fetch is a no-op once the pinned revision is present', () {
     expect(fetch().exitCode, equals(0), reason: 'first fetch failed');
     curlCalls();

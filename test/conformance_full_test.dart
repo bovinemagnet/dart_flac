@@ -54,38 +54,54 @@ const _faultyBaseline = {
   '11 - incorrect metadata block length.flac': 'reject',
 };
 
-List<String> _flacFiles(String subdir) => Directory('$conformanceDir/$subdir')
-    .listSync()
-    .whereType<File>()
-    .map((f) => f.uri.pathSegments.last)
-    .where((name) => name.endsWith('.flac'))
-    .toList()
-  ..sort();
+/// Number of .flac files per directory at the pinned testbench commit.
+const _expectedFileCounts = {'subset': 64, 'uncommon': 11, 'faulty': 11};
+
+/// Sorted .flac file names in [subdir]; empty if the directory is missing,
+/// so an incomplete testbench fails 'testbench is complete' rather than
+/// breaking test registration.
+List<String> _flacFiles(String subdir) {
+  final dir = Directory('$conformanceDir/$subdir');
+  if (!dir.existsSync()) return [];
+  return dir
+      .listSync()
+      .whereType<File>()
+      .map((f) => f.uri.pathSegments.last)
+      .where((name) => name.endsWith('.flac'))
+      .toList()
+    ..sort();
+}
 
 void main() {
   if (!fullSetPresent) {
-    test('full testbench not fetched', () {},
-        skip: 'Run tool/fetch_conformance.sh --full to download the complete '
+    filesNotFetched(
+        'full testbench not fetched',
+        'Run tool/fetch_conformance.sh --full to download the complete '
             'CELLAR testbench (~201 MB).');
     return;
   }
 
-  // fullSetPresent keys off a single sentinel file; guard against a partial
-  // fetch (or a future testbench revision that renames it) silently skipping
-  // the whole sweep by asserting the subset directory is fully populated.
-  final subsetCount = Directory('$conformanceDir/subset')
-      .listSync()
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.flac'))
-      .length;
-  if (subsetCount < 64) {
-    test('full testbench appears incomplete', () {
-      fail('Expected >=64 subset files but found $subsetCount. Re-run '
-          'tool/fetch_conformance.sh --full (the pinned testbench may have '
-          'changed — re-triage the baseline maps).');
-    });
-    return;
-  }
+  // The sweep is built from the files on disk, so a missing file would
+  // silently shrink it. Pin the exact contents instead; a SHA bump that
+  // changes them must re-triage the baselines above.
+  test('testbench is complete', () {
+    for (final MapEntry(key: subdir, value: count)
+        in _expectedFileCounts.entries) {
+      expect(_flacFiles(subdir), hasLength(count),
+          reason: 'Unexpected number of files in $subdir/. Re-run '
+              'tool/fetch_conformance.sh --full, or re-triage the baselines '
+              'after a SHA bump.');
+    }
+    final baselinePaths = [
+      ..._expectedRejects,
+      ..._noMd5.keys,
+      for (final name in _faultyBaseline.keys) 'faulty/$name',
+    ];
+    for (final path in baselinePaths) {
+      expect(File('$conformanceDir/$path').existsSync(), isTrue,
+          reason: 'Baseline entry has no file: $path');
+    }
+  });
 
   group('CELLAR sweep: subset', () {
     for (final name in _flacFiles('subset')) {
