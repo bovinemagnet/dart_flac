@@ -73,8 +73,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: test/fixtures/conformance
-          # Keep in lockstep with SHA in tool/fetch_conformance.sh.
-          key: cellar-curated-aa7b0c6cf32994c106ae517a08134c28a96ff5b2
+          # Hashing the script picks up any change to its pinned SHA or
+          # curated list, so the cache cannot serve a stale testbench.
+          key: cellar-curated-${{ hashFiles('tool/fetch_conformance.sh') }}
 
       - name: Fetch curated CELLAR files
         # No-op on cache hit (the script skips files already present).
