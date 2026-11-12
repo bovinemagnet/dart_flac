@@ -404,10 +404,10 @@ class FlacReader {
   /// The layout is: `[ch0[0], ch1[0], ch0[1], ch1[1], ...]` for stereo.
   Int32List decodeInterleavedSamples() {
     final frames = decodeFrames();
-    final info = streamInfo;
-    final totalSamples = info.totalSamples > 0
-        ? info.totalSamples * info.channels
-        : frames.fold<int>(0, (sum, f) => sum + f.blockSize * f.channelCount);
+    // Size from the decoded frames, not STREAMINFO: totalSamples may be
+    // wrong, and the channel count can change mid-stream.
+    final totalSamples =
+        frames.fold<int>(0, (sum, f) => sum + f.blockSize * f.channelCount);
     final output = Int32List(totalSamples);
     var out = 0;
     for (final frame in frames) {
@@ -419,7 +419,7 @@ class FlacReader {
         }
       }
     }
-    return output.sublist(0, out);
+    return output;
   }
 
   // ---------------------------------------------------------------------------

@@ -167,6 +167,25 @@ void main() {
         expect(samples[i], equals(0), reason: 'index $i should be 0');
       }
     });
+
+    test(
+        'decodeInterleavedSamples returns every sample when STREAMINFO '
+        'under-reports totalSamples', () {
+      // total_samples low byte is at offset 25; claim 4 while the stream
+      // actually carries 8 samples per channel.
+      final bytes = Uint8List.fromList(_minimalFlac)..[25] = 0x04;
+      final reader = FlacReader.fromBytes(bytes);
+      expect(reader.streamInfo.totalSamples, equals(4));
+
+      final samples = reader.decodeInterleavedSamples();
+      expect(samples.length, equals(16));
+      expect(
+          samples.sublist(0, 8),
+          equals([
+            for (var i = 0; i < 4; i++) ...[1000, -500]
+          ]));
+      expect(samples.sublist(8), everyElement(equals(0)));
+    });
   });
 
   group('VorbisCommentBlock', () {
