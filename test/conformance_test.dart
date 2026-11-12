@@ -51,8 +51,9 @@ const _faultyFile = 'faulty/10 - invalid vorbis comment metadata block.flac';
 
 void main() {
   if (!curatedFilesPresent) {
-    test('curated conformance files not fetched', () {},
-        skip: 'Run tool/fetch_conformance.sh to download the curated CELLAR '
+    filesNotFetched(
+        'curated conformance files not fetched',
+        'Run tool/fetch_conformance.sh to download the curated CELLAR '
             'testbench files (~12 MB).');
     return;
   }

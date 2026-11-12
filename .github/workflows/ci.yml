@@ -82,4 +82,8 @@ jobs:
         run: ./tool/fetch_conformance.sh
 
       - name: Conformance tests
+        # Fail rather than skip if the files are missing, so the job cannot
+        # pass without running a conformance test.
+        env:
+          FLAC_CONFORMANCE_REQUIRED: true
         run: dart test -t conformance

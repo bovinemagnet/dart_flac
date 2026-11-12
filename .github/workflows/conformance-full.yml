@@ -27,4 +27,8 @@ jobs:
         run: ./tool/fetch_conformance.sh --full
 
       - name: Full testbench sweep
+        # Fail rather than skip if the testbench is missing, so the run
+        # cannot pass without sweeping it.
+        env:
+          FLAC_CONFORMANCE_REQUIRED: true
         run: dart test -t conformance-full

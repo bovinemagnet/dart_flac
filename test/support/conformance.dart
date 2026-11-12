@@ -6,16 +6,34 @@ import 'package:dart_flac/dart_flac.dart';
 import 'package:test/test.dart';
 
 /// Root directory populated by `tool/fetch_conformance.sh`.
-const conformanceDir = 'test/fixtures/conformance';
+/// FLAC_CONFORMANCE_DIR overrides it (used by conformance_gating_test.dart).
+final conformanceDir =
+    Platform.environment['FLAC_CONFORMANCE_DIR'] ?? 'test/fixtures/conformance';
 
-/// Present after any fetch: the first curated file.
-bool get curatedFilesPresent =>
-    File('$conformanceDir/subset/01 - blocksize 4096.flac').existsSync();
+/// The testbench commit pinned in `tool/fetch_conformance.sh`.
+final _pinnedSha = RegExp(r'^SHA=(\w+)$', multiLine: true)
+    .firstMatch(File('tool/fetch_conformance.sh').readAsStringSync())![1]!;
 
-/// Present only after `--full`: a file outside the curated set, so its
-/// existence means the whole testbench is available.
+/// The fetch script writes these markers only after a complete fetch at the
+/// pinned SHA. A full fetch includes the curated files.
 bool get fullSetPresent =>
-    File('$conformanceDir/subset/02 - blocksize 4608.flac').existsSync();
+    File('$conformanceDir/.full-$_pinnedSha').existsSync();
+
+bool get curatedFilesPresent =>
+    fullSetPresent || File('$conformanceDir/.curated-$_pinnedSha').existsSync();
+
+/// Registers the placeholder test for a suite whose files are absent. It is
+/// skipped, unless FLAC_CONFORMANCE_REQUIRED is set (as the CI workflows do),
+/// in which case it fails, so CI cannot pass with every conformance test
+/// skipped.
+void filesNotFetched(String description, String fetchHint) {
+  if ((Platform.environment['FLAC_CONFORMANCE_REQUIRED'] ?? '').isNotEmpty) {
+    test(description,
+        () => fail('$fetchHint (FLAC_CONFORMANCE_REQUIRED is set).'));
+  } else {
+    test(description, () {}, skip: fetchHint);
+  }
+}
 
 /// Parses one file and returns the STREAMINFO MD5 verdict.
 /// [Md5VerificationResult.match] proves a bit-exact decode of the whole
