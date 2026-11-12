@@ -5,7 +5,7 @@
 # Default: download the ten curated files used by `dart test -t conformance`
 #          (~12 MB, fetched individually).
 # --full:  download the complete testbench tarball (~201 MB download,
-#          ~296 MB extracted) used by `dart test -t conformance-full`.
+#          ~296 MB extracted) used by `dart test -P conformance-full`.
 #
 # Files land in test/fixtures/conformance/ (gitignored). Idempotent: each
 # mode writes a marker naming the pinned SHA, and files fetched at that SHA
