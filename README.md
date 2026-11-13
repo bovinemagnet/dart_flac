@@ -183,8 +183,12 @@ Conformance tests against the official [IETF CELLAR FLAC testbench](https://gith
 dart test -t conformance
 
 ./tool/fetch_conformance.sh --full     # complete testbench (~201 MB)
-dart test -t conformance-full
+dart test -P conformance-full
 ```
+
+Once fetched, the curated set (a few seconds) also runs as part of a plain
+`dart test`. The full sweep never does: it is skipped unless selected with
+`-P conformance-full`, so everyday and coverage runs stay fast.
 
 The curated set runs in CI on every pull request; the full sweep is a
 manually triggered workflow (Actions → "Conformance (full testbench)").

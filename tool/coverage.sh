@@ -3,7 +3,10 @@
 
 set -euo pipefail
 
-dart test --coverage=coverage
+# Exclude the full conformance sweep rather than letting its tag skip it:
+# a suite skipped as a whole leaves an empty coverage file, which
+# format_coverage (coverage >= 1.16.0) rejects.
+dart test --coverage=coverage -x conformance-full
 dart run coverage:format_coverage \
   --lcov \
   --in=coverage \

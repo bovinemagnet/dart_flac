@@ -3,4 +3,16 @@ tags:
   # Tests self-skip when the files are absent.
   conformance:
   # Needs the complete testbench: tool/fetch_conformance.sh --full (~201 MB).
+  # Skipped in plain `dart test` runs, even once fetched, so everyday and
+  # coverage runs stay fast. Run it with `dart test -P conformance-full`.
+  # (A top-level exclude_tags could not be undone by a preset or -t.)
   conformance-full:
+    skip: Full testbench sweep; run with `dart test -P conformance-full`.
+
+presets:
+  # Runs only the full testbench sweep.
+  conformance-full:
+    include_tags: conformance-full
+    tags:
+      conformance-full:
+        skip: false

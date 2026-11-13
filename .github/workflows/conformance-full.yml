@@ -31,4 +31,4 @@ jobs:
         # cannot pass without sweeping it.
         env:
           FLAC_CONFORMANCE_REQUIRED: true
-        run: dart test -t conformance-full
+        run: dart test -P conformance-full

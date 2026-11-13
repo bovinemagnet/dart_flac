@@ -20,7 +20,7 @@ dart format .                         # format the codebase
 ./tool/fetch_conformance.sh           # fetch curated CELLAR conformance files (~12 MB)
 dart test -t conformance              # conformance tests (self-skip if not fetched)
 ./tool/fetch_conformance.sh --full    # fetch complete testbench (~201 MB)
-dart test -t conformance-full         # whole-testbench sweep
+dart test -P conformance-full         # whole-testbench sweep (skipped by plain dart test)
 ```
 
 There is no build step — this is a pub package, not an executable. `pubspec.lock` is gitignored.
